@@ -19,4 +19,4 @@ project(test_package LANGUAGES CXX)
 find_package(strong_ptr REQUIRED CONFIG)
 
 add_executable(test_package main.cpp)
-target_link_libraries(test_package PRIVATE libhal::strong_ptr)
+target_link_libraries(test_package PRIVATE mem::strong_ptr)

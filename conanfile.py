@@ -38,7 +38,7 @@ class strong_ptr_conan(ConanFile):
 
     def package_info(self):
         self.cpp_info.libs = ["strong_ptr"]
-        self.cpp_info.set_property("cmake_target_name", "libhal::strong_ptr")
+        self.cpp_info.set_property("cmake_target_name", "strong_ptr")
 
     def package_id(self):
         self.info.clear()

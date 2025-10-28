@@ -14,15 +14,17 @@
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <memory_resource>
 #include <type_traits>
 #include <utility>
 
-#include <libhal/error.hpp>
-#include <libhal/units.hpp>
+using usize = std::uintptr_t;
+using i32 = std::int32_t;
+using u32 = std::uint32_t;
 
-namespace hal::v5 {
+namespace mem {
 // Forward declarations
 template<typename T>
 class strong_ptr;
@@ -197,6 +199,156 @@ concept array_like = is_array_like_v<T>;
 template<typename T>
 concept non_array_like = !array_like<T>;
 }  // namespace detail
+/**
+ * @ingroup Error
+ * @brief Base exception class for all hal related exceptions
+ *
+ */
+class exception
+{
+public:
+  constexpr exception(std::errc p_error_code, void const* p_instance)
+    : m_instance(p_instance)
+    , m_error_code(p_error_code)
+  {
+    static_cast<void>(m_reserved0);
+    static_cast<void>(m_reserved1);
+    static_cast<void>(m_reserved2);
+    static_cast<void>(m_reserved3);
+  }
+
+  /**
+   * @brief address of the object that threw an exception
+   *
+   * If the exception was thrown by a function, this will be a nullptr. The
+   * purpose of this field is to allow exception handlers additional insight
+   * about what may have gone wrong with the system.
+   *
+   * Use cases:
+   *
+   *  1. Logging:
+   *      a. Log the instance object address raw
+   *      b. Use the instance address to determine which driver failed and
+   *         craft a more accurate log message.
+   *  2. Recovery:
+   *      a. Compare the instance address against drivers which are known to
+   *         throw recoverable errors. When the driver or object is found,
+   *         perform operations on that driver to bring the system back into a
+   *         normal state.
+   *
+   * NOTE: about using this for recovery. The instance address should not be
+   * used directly but only with objects that are still accessible by the error
+   * handler. This address should be used for lookup. DO NOT COST away the const
+   * or C-cast this into an object for use. If the object you mean to manipulate
+   * is not at least within the scope catch handler, then the lifetime of that
+   * object cannot be guaranteed and is considered the strongest form of UB.
+   *
+   */
+  [[nodiscard]] void const* instance() const
+  {
+    return m_instance;
+  }
+
+  /**
+   * @brief Convert this exception to the closest C++ error code
+   *
+   * Main Use Case: Translation from C++ exceptions to C error codes
+   *
+   * Lets consider a situation when a C++ program must interface with C code or
+   * code that uses a C API to operate. Normally C++ code calls C code, but if
+   * C++ code is given to a C API like a callback and that C api expects an
+   * error code back for its own error handling purposes, this class function
+   * provides that error code. Simply catch the mem::exception, and return an
+   * error code. Perform any other recovery or handling required to make the
+   * system perform as expected.
+   *
+   * Other use cases:
+   *
+   * 1. Logging
+   *
+   * Log the error code value (or the stringified version) of this exception to
+   * alert developers of the kind of underlying exception that was thrown.
+   *
+   * 2. Recovery
+   *
+   * This can technically be used for recovery, but it is HIGHLY RECOMMENDED to
+   * use the derived classes in their own catch blocks to recover from a
+   * specific error rather than using the base class and extracting its error
+   * code.
+   *
+   * @return std::errc - error code represented by the exception
+   */
+  [[nodiscard]] std::errc error_code() const
+  {
+    return m_error_code;
+  }
+
+private:
+  void const* m_instance = nullptr;
+  std::errc m_error_code{};
+  /// Reserved memory for future use without breaking the ABI
+  /// To keep the layout the same with `exception_abi_origin_v0`, these MUST
+  /// stay u32 into the future. Their names can be changed, and their
+  /// contents can be any format, but they must stay u32 for the
+  /// static_assert check.
+  u32 m_reserved0{};
+  u32 m_reserved1{};
+  u32 m_reserved2{};
+  u32 m_reserved3{};
+};
+
+/**
+ * @ingroup Error
+ * @brief Raised when an API attempts to access elements outside of a container
+ * or resource.
+ *
+ */
+struct out_of_range : public exception
+{
+  struct info
+  {
+    usize m_index;
+    usize m_capacity;
+  };
+
+  out_of_range(void const* p_instance, info p_info)
+    : exception(std::errc::invalid_argument, p_instance)
+    , m_info(p_info)
+  {
+  }
+
+  info m_info;
+};
+
+/**
+ * @ingroup Error
+ * @brief Raised when a weak_ptr is accessed for an object that has been
+ * destroyed.
+ *
+ */
+struct bad_weak_ptr : public exception
+{
+public:
+  bad_weak_ptr(void* p_weak_ptr_instance)
+    : mem::exception(std::errc::bad_address, p_weak_ptr_instance)
+  {
+  }
+};
+
+/**
+ * @ingroup Error
+ * @brief Raised when an API attempts to access the contents of an empty
+ * optional_ptr.
+ *
+ */
+struct bad_optional_ptr_access : public exception
+{
+
+  bad_optional_ptr_access(void const* p_instance)
+    : exception(std::errc::invalid_argument, p_instance)
+  {
+  }
+};
 
 /**
  * @brief A non-nullable strong reference counted pointer
@@ -216,7 +368,7 @@ concept non_array_like = !array_like<T>;
  *
  * ```C++
  * // Create a strong_ptr to an object
- * auto ptr = hal::make_strong_ptr<my_i2c_driver>(allocator, arg1, arg2);
+ * auto ptr = mem::make_strong_ptr<my_i2c_driver>(allocator, arg1, arg2);
  *
  * // Use the object using dereference (*) operator
  * (*ptr).configure({ .clock_rate = 250_kHz });
@@ -225,7 +377,7 @@ concept non_array_like = !array_like<T>;
  * ptr->configure({ .clock_rate = 250_kHz });
  *
  * // Share ownership with another driver or object
- * auto my_imu = hal::make_strong_ptr<my_driver>(allocator, ptr, 0x13);
+ * auto my_imu = mem::make_strong_ptr<my_driver>(allocator, ptr, 0x13);
  * ```
  *
  * @tparam T The type of the managed object
@@ -422,7 +574,7 @@ public:
    * @param p_other The strong_ptr to the parent object
    * @param p_array_ptr Pointer-to-member identifying the array member
    * @param p_index Index of the element to reference
-   * @throws hal::out_of_range if index is out of bounds
+   * @throws mem::out_of_range if index is out of bounds
    */
   template<typename U, typename E, std::size_t N>
   strong_ptr(strong_ptr<U> const& p_other,
@@ -469,7 +621,7 @@ public:
    * @param p_other The strong_ptr to the parent object
    * @param p_array_ptr Pointer-to-member identifying the array member
    * @param p_index Index of the element to reference
-   * @throws hal::out_of_range if index is out of bounds
+   * @throws mem::out_of_range if index is out of bounds
    */
   template<typename U, typename E, std::size_t N>
   strong_ptr(strong_ptr<U> const& p_other,
@@ -602,12 +754,12 @@ private:
 
   template<typename U>
   friend class optional_ptr;
-
+  // TODO: make replacement error structs
   inline void throw_if_out_of_bounds(usize p_size, usize p_index)
   {
     if (p_index >= p_size) {
-      hal::safe_throw(
-        hal::out_of_range(this, { .m_index = p_index, .m_capacity = p_size }));
+      throw(
+        mem::out_of_range(this, { .m_index = p_index, .m_capacity = p_size }));
     }
   }
 
@@ -665,13 +817,13 @@ public:
    * @brief Get a strong_ptr to this object
    *
    * @return strong_ptr<T> pointing to this object
-   * @throws hal::bad_weak_ptr if this object is not managed by a strong_ptr
+   * @throws mem::bad_weak_ptr if this object is not managed by a strong_ptr
    */
   [[nodiscard]] strong_ptr<T> strong_from_this()
   {
     auto locked = m_weak_this.lock();
     if (!locked) {
-      hal::safe_throw(hal::bad_weak_ptr(&m_weak_this));
+      throw(mem::bad_weak_ptr(&m_weak_this));
     }
     return locked.value();
   }
@@ -680,13 +832,13 @@ public:
    * @brief Get a strong_ptr to this object (const version)
    *
    * @return strong_ptr<T const> pointing to this object
-   * @throws hal::bad_weak_ptr if this object is not managed by a strong_ptr
+   * @throws mem::bad_weak_ptr if this object is not managed by a strong_ptr
    */
   [[nodiscard]] strong_ptr<T const> strong_from_this() const
   {
     auto locked = m_weak_this.lock();
     if (!locked) {
-      hal::safe_throw(hal::bad_weak_ptr(&m_weak_this));
+      throw(mem::bad_weak_ptr(&m_weak_this));
     }
     // Cast the strong_ptr<T> to strong_ptr<T const>
     return strong_ptr<T const>(locked.value());
@@ -778,7 +930,7 @@ class optional_ptr;
  * Example usage:
  * ```
  * // Create a strong_ptr to an object
- * auto ptr = hal::make_strong_ptr<my_driver>(allocator, args...);
+ * auto ptr = mem::make_strong_ptr<my_driver>(allocator, args...);
  *
  * // Create a weak reference
  * weak_ptr<my_driver> weak = ptr;
@@ -1006,7 +1158,7 @@ private:
 };
 
 /**
- * @brief Optional, nullable, smart pointer that works with `hal::strong_ptr`.
+ * @brief Optional, nullable, smart pointer that works with `mem::strong_ptr`.
  *
  * optional_ptr provides a way to represent a strong_ptr that may or may not
  * be present. Unlike strong_ptr, which is always valid, optional_ptr can be
@@ -1202,12 +1354,12 @@ public:
    * @brief Access the contained value, throw if not engaged
    *
    * @return A copy of the contained strong_ptr
-   * @throws hal::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::bad_optional_ptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr strong_ptr<T>& value()
   {
     if (!is_engaged()) {
-      hal::safe_throw(hal::bad_optional_ptr_access(this));
+      throw(mem::bad_optional_ptr_access(this));
     }
     return m_value;
   }
@@ -1216,12 +1368,12 @@ public:
    * @brief Access the contained value, throw if not engaged (const version)
    *
    * @return A copy of the contained strong_ptr
-   * @throws hal::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::bad_optional_ptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr strong_ptr<T> const& value() const
   {
     if (!is_engaged()) {
-      hal::safe_throw(hal::bad_optional_ptr_access(this));
+      throw(mem::bad_optional_ptr_access(this));
     }
     return m_value;
   }
@@ -1233,7 +1385,7 @@ public:
    * when the optional_ptr is engaged.
    *
    * @return A copy of the contained strong_ptr
-   * @throws hal::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::bad_optional_ptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr operator strong_ptr<T>()
   {
@@ -1244,7 +1396,7 @@ public:
    * @brief Implicitly convert to a strong_ptr<T> (const version)
    *
    * @return A copy of the contained strong_ptr
-   * @throws hal::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::bad_optional_ptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr operator strong_ptr<T>() const
   {
@@ -1259,14 +1411,14 @@ public:
    *
    * @tparam U The target type (must be convertible from T)
    * @return A copy of the contained strong_ptr, converted to the target type
-   * @throws hal::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::bad_optional_ptr_access if *this is disengaged
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>()
     requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
   {
     if (!is_engaged()) {
-      hal::safe_throw(hal::bad_optional_ptr_access(this));
+      throw(mem::bad_optional_ptr_access(this));
     }
     // strong_ptr handles the polymorphic conversion
     return strong_ptr<U>(m_value);
@@ -1278,14 +1430,14 @@ public:
    *
    * @tparam U The target type (must be convertible from T)
    * @return A copy of the contained strong_ptr, converted to the target type
-   * @throws hal::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::bad_optional_ptr_access if *this is disengaged
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>() const
     requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
   {
     if (!is_engaged()) {
-      hal::safe_throw(hal::bad_optional_ptr_access(this));
+      throw(mem::bad_optional_ptr_access(this));
     }
     // strong_ptr handles the polymorphic conversion
     return strong_ptr<U>(m_value);
@@ -1725,4 +1877,4 @@ template<class T, typename... Args>
 
   return result;
 }
-}  // namespace hal::v5
+}  // namespace mem

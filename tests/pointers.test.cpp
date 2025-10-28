@@ -16,12 +16,10 @@
 
 #include <strong_ptr/pointers.hpp>
 
-#include "helpers.hpp"
-
 #include <boost/ut.hpp>
 
 // NOLINTBEGIN(performance-unnecessary-copy-initialization)
-namespace hal::v5 {
+namespace mem {
 namespace {
 // Base class for testing polymorphism
 class base_class
@@ -44,6 +42,66 @@ public:
   {
     return m_value;
   }
+
+private:
+  int m_value;
+};
+
+// Create a test class to use with smart pointers
+class test_class
+{
+public:
+  explicit test_class(int p_value = 0)
+    : m_value(p_value)
+  {
+    ++s_instance_count;
+  }
+
+  ~test_class()
+  {
+    --s_instance_count;
+  }
+
+  test_class(test_class const& p_other)
+  {
+    m_value = p_other.m_value;
+    ++s_instance_count;
+  }
+
+  test_class& operator=(test_class const& p_other)
+  {
+    if (this != &p_other) {
+      m_value = p_other.m_value;
+      ++s_instance_count;
+    }
+    return *this;
+  }
+
+  test_class(test_class&& p_other) noexcept
+    : m_value(p_other.m_value)
+  {
+  }
+
+  test_class& operator=(test_class&& p_other) noexcept
+  {
+    if (this != &p_other) {
+      m_value = p_other.m_value;
+    }
+    return *this;
+  }
+
+  [[nodiscard]] int value() const
+  {
+    return m_value;
+  }
+
+  void set_value(int p_value)
+  {
+    m_value = p_value;
+  }
+
+  // Static counter for number of instances
+  inline static int s_instance_count = 0;
 
 private:
   int m_value;
@@ -413,10 +471,10 @@ boost::ut::suite<"optional_ptr_test"> optional_ptr_test =
 
       // Test exception on accessing null optional
       optional_ptr<test_class> empty;
-      expect(throws<hal::bad_optional_ptr_access>(
+      expect(throws<mem::bad_optional_ptr_access>(
         [&] { [[maybe_unused]] auto _ = empty->value(); }))
         << "Accessing null optional with arrow operator should throw\n";
-      expect(throws<hal::bad_optional_ptr_access>(
+      expect(throws<mem::bad_optional_ptr_access>(
         [&] { [[maybe_unused]] auto _ = (*empty).value(); }))
         << "Accessing null optional with dereference operator should throw\n";
     };
@@ -510,12 +568,12 @@ boost::ut::suite<"optional_ptr_test"> optional_ptr_test =
       };
   };
 // NOLINTEND(performance-unnecessary-copy-initialization)
-}  // namespace hal::v5
+}  // namespace mem
 
 // Additional unit tests for new features: enable_strong_from_this,
 // strong_ptr_only, and optional_ptr improvements
 
-namespace hal::v5 {
+namespace mem {
 namespace {
 
 // Test class that uses enable_strong_from_this
@@ -578,7 +636,7 @@ public:
   }
 
   // Private constructor - only make_strong_ptr can access
-  explicit restricted_class(hal::v5::strong_ptr_only_token, int p_value = 0)
+  explicit restricted_class(mem::strong_ptr_only_token, int p_value = 0)
     : m_value(p_value)
   {
   }
@@ -610,7 +668,7 @@ public:
     return strong_from_this();
   }
 
-  explicit fully_managed_class(hal::v5::strong_ptr_only_token, int p_value = 0)
+  explicit fully_managed_class(mem::strong_ptr_only_token, int p_value = 0)
     : m_value(p_value)
   {
   }
@@ -830,7 +888,7 @@ boost::ut::suite<"optional_ptr_conversion_test"> optional_ptr_conversion_test =
     "conversion_with_empty_optional"_test = [&] {
       optional_ptr<test_class> empty;
 
-      expect(throws<hal::bad_optional_ptr_access>([&] {
+      expect(throws<mem::bad_optional_ptr_access>([&] {
         strong_ptr<test_class> converted = empty;  // Should throw
       }));
     };
@@ -896,12 +954,12 @@ boost::ut::suite<"bad_weak_ptr_test"> bad_weak_ptr_test = []() {
   using namespace boost::ut;
 
   "exception_type"_test = [&] {
-    // Test that bad_weak_ptr is properly derived from hal::exception
-    static_assert(std::is_base_of_v<hal::exception, hal::bad_weak_ptr>);
+    // Test that bad_weak_ptr is properly derived from mem::exception
+    static_assert(std::is_base_of_v<mem::exception, mem::bad_weak_ptr>);
 
     // Test construction
     expect(nothrow([&] {
-      hal::bad_weak_ptr ex(nullptr);
+      mem::bad_weak_ptr ex(nullptr);
       // Should construct without throwing
     }));
   };
@@ -920,4 +978,4 @@ boost::ut::suite<"bad_weak_ptr_test"> bad_weak_ptr_test = []() {
   };
 };
 
-}  // namespace hal::v5
+}  // namespace mem
