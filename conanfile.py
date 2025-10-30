@@ -27,6 +27,7 @@ class strong_ptr_conan(ConanFile):
     settings = "compiler", "build_type", "os", "arch"
     package_type = "header-library"
 
+    # TODO(#7): remove this dependency
     python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
     python_requires_extend = "libhal-bootstrap.library"
 

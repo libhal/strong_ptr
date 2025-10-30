@@ -20,11 +20,11 @@
 #include <type_traits>
 #include <utility>
 
+namespace mem {
 using usize = std::uintptr_t;
 using i32 = std::int32_t;
 using u32 = std::uint32_t;
 
-namespace mem {
 // Forward declarations
 template<typename T>
 class strong_ptr;
@@ -196,6 +196,7 @@ template<typename T>
 concept array_like = is_array_like_v<T>;
 
 // Concept for non-array-like types
+// TODO(#6): Improve thrown error types
 template<typename T>
 concept non_array_like = !array_like<T>;
 }  // namespace detail
