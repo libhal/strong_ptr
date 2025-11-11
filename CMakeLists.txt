@@ -51,25 +51,24 @@ install(
 # Unit testing
 # ==============================================================================
 
-find_package(ut REQUIRED)
-
-add_executable(strong_ptr_unit_test)
-
-# Add module files
-target_sources(strong_ptr_unit_test
-  PRIVATE
-      tests/main.test.cpp
-      tests/strong_ptr.test.cpp
-)
-
-target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
-target_link_libraries(strong_ptr_unit_test PRIVATE strong_ptr Boost::ut)
-
 if(CMAKE_CROSSCOMPILING)
     message(STATUS "Cross compiling, skipping unit test execution")
 else()
+    find_package(ut REQUIRED)
+    add_executable(strong_ptr_unit_test)
+    target_sources(strong_ptr_unit_test
+      PRIVATE
+          tests/main.test.cpp
+          tests/strong_ptr.test.cpp
+    )
+    target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
+    target_link_libraries(strong_ptr_unit_test PRIVATE strong_ptr Boost::ut)
+
     message(STATUS "Executing unit tests!")
-    add_custom_target(run_tests ALL DEPENDS strong_ptr_unit_test COMMAND strong_ptr_unit_test)
+    add_custom_target(run_tests ALL
+      DEPENDS strong_ptr_unit_test
+      COMMAND strong_ptr_unit_test
+    )
 endif()
 
 # Always run this custom target by making it depend on ALL
