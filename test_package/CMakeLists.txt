@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.28)
 
 project(test_package LANGUAGES CXX)
 
+# Require Ninja or Visual Studio for modules
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Visual Studio")
+    message(FATAL_ERROR "C++20 modules require Ninja or Visual Studio generator")
+endif()
+
 find_package(strong_ptr REQUIRED CONFIG)
 
-add_executable(test_package main.cpp)
-target_link_libraries(test_package PRIVATE mem::strong_ptr)
+add_executable(${PROJECT_NAME} main.cpp)
+target_include_directories(${PROJECT_NAME} PUBLIC .)
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
+target_link_libraries(${PROJECT_NAME} PRIVATE strong_ptr)

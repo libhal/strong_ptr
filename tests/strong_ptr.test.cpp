@@ -14,9 +14,9 @@
 
 #include <memory_resource>
 
-#include <strong_ptr/pointers.hpp>
-
 #include <boost/ut.hpp>
+
+import strong_ptr;
 
 // NOLINTBEGIN(performance-unnecessary-copy-initialization)
 namespace mem {

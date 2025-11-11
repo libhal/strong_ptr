@@ -1,3 +1,5 @@
+#!/usr/bin/python
+#
 # Copyright 2024 - 2025 Khalil Estell and the libhal contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,33 +15,112 @@
 # limitations under the License.
 
 from conan import ConanFile
+from conan.tools.cmake import CMake, cmake_layout, CMakeToolchain, CMakeDeps
+from conan.tools.files import copy
+from conan.errors import ConanInvalidConfiguration
+from conan.tools.build import check_min_cppstd
+from pathlib import Path
 
 
-required_conan_version = ">=2.0.14"
+required_conan_version = ">=2.2.0"
 
 
 class strong_ptr_conan(ConanFile):
     name = "strong_ptr"
     license = "Apache-2.0"
+    url = "https://github.com/libhal/strong_ptr"
     homepage = "https://github.com/libhal/strong_ptr"
-    description = ("A collection of drivers for the __device__")
-    topics = ("strong_ptr", "libhal", "driver")
+    description = (
+        "Safe and easy to use alternative to std::shared_ptr for memory constrained systems")
+    topics = ("memory", "dynamic", "polymorphic_allocator",
+              "pointer", "pointers")
     settings = "compiler", "build_type", "os", "arch"
-    package_type = "header-library"
+    exports_sources = "modules/*", "tests/*", "CMakeLists.txt", "LICENSE"
+    package_type = "static-library"
+    shared = False
 
-    # TODO(#7): remove this dependency
-    python_requires = "libhal-bootstrap/[>=4.3.0 <5]"
-    python_requires_extend = "libhal-bootstrap.library"
+    @property
+    def _min_cppstd(self):
+        return "23"
+
+    @property
+    def _compilers_minimum_version(self):
+        # We may reduce these in the future.
+        return {
+            "gcc": ("14", "GCC 14+ required for strong_ptr"),
+            "clang": (
+                "19",
+                "Clang 19+ required for strong_ptr"
+            ),
+            "apple-clang": (
+                "19.0.0",
+                "Apple Clang 19+ for strong_ptr"
+            ),
+            "msvc": (
+                "193.4",
+                "MSVC 14.34+ (Visual Studio 17.4+) for strong_ptr"
+            )
+        }
+
+    def _validate_compiler_version(self):
+        """Validate compiler version against minimum requirements"""
+        compiler = str(self.settings.compiler)
+        version = str(self.settings.compiler.version)
+
+        # Map Visual Studio to msvc for consistency
+        compiler_key = "msvc" if compiler == "Visual Studio" else compiler
+
+        min_versions = self._compilers_minimum_version
+        if compiler_key not in min_versions:
+            raise ConanInvalidConfiguration(
+                f"Compiler {compiler} is not supported for C++20 modules")
+
+        min_version, error_msg = min_versions[compiler_key]
+        if version < min_version:
+            raise ConanInvalidConfiguration(error_msg)
+
+    def validate(self):
+        if self.settings.get_safe("compiler.cppstd"):
+            check_min_cppstd(self, self._min_cppstd)
+
+        self._validate_compiler_version()
+
+    def build_requirements(self):
+        self.tool_requires("cmake/4.1.1")
+        self.tool_requires("ninja/1.13.1")
+        self.test_requires("boost-ext-ut/2.3.1",
+                           options={'disable_module': False})
 
     def requirements(self):
-        # Adds libhal and libhal-util as transitive headers, meaning library
-        # consumers get the libhal and libhal-util headers downstream.
-        bootstrap = self.python_requires["libhal-bootstrap"]
-        bootstrap.module.add_library_requirements(self)
+        pass
+
+    def layout(self):
+        cmake_layout(self)
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generator = "Ninja"
+        tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = True
+        tc.generate()
+
+        deps = CMakeDeps(self)
+        deps.generate()
+
+    def build(self):
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.build()
+
+    def package(self):
+        cmake = CMake(self)
+        cmake.install()
+
+        copy(self, "LICENSE",
+             dst=Path(self.package_folder) / "licenses",
+             src=self.source_folder)
 
     def package_info(self):
-        self.cpp_info.libs = ["strong_ptr"]
-        self.cpp_info.set_property("cmake_target_name", "strong_ptr")
-
-    def package_id(self):
-        self.info.clear()
+        # DISABLE Conan's config file generation
+        self.cpp_info.set_property("cmake_find_mode", "none")
+        # Tell CMake to include this directory in its search path
+        self.cpp_info.builddirs.append("lib/cmake")

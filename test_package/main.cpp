@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <strong_ptr/pointers.hpp>
+import strong_ptr;
 
 int main()
 {

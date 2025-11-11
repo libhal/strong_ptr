@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+module;
 
 #include <array>
 #include <atomic>
 #include <memory_resource>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
-namespace mem {
+export module strong_ptr;
+
+export namespace mem::inline v1 {
 using usize = std::uintptr_t;
 using i32 = std::int32_t;
 using u32 = std::uint32_t;
@@ -1878,4 +1881,4 @@ template<class T, typename... Args>
 
   return result;
 }
-}  // namespace mem
+}  // namespace mem::inline v1
