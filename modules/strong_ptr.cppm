@@ -35,7 +35,6 @@ class strong_ptr;
 template<typename T>
 class weak_ptr;
 
-namespace detail {
 /**
  * @brief Control block for reference counting - type erased.
  *
@@ -62,83 +61,79 @@ struct ref_info
   destroy_fn_t* destroy;
   std::atomic<i32> strong_count = 1;
   std::atomic<i32> weak_count = 0;
+
+  /**
+   * @brief Add strong reference to control block
+   *
+   */
+  void add_ref()
+  {
+    strong_count.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  /**
+   * @brief Release strong reference from control block
+   *
+   * If this was the last strong reference, the pointed-to object will be
+   * destroyed. If there are no remaining weak references, the memory
+   * will also be deallocated.
+   */
+  void release()
+  {
+    if (strong_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+      // No more strong references, destroy the object but keep control block
+      // if there are weak references
+
+      // Call the destroy function which will:
+      // 1. Call the destructor of the object
+      // 2. Return the size of the rc for deallocation when needed
+      usize const object_size = destroy(this);
+
+      // If there are no weak references, deallocate memory
+      if (weak_count.load(std::memory_order_acquire) == 0) {
+        // Save allocator for deallocating
+        auto alloc = allocator;
+
+        // Deallocate memory
+        alloc.deallocate_bytes(this, object_size);
+      }
+    }
+  }
+
+  /**
+   * @brief Add weak reference to control block
+   *
+   */
+  void add_weak()
+  {
+    weak_count.fetch_add(1, std::memory_order_relaxed);
+  }
+
+  /**
+   * @brief Release weak reference from control block
+   *
+   * If this was the last weak reference and there are no remaining
+   * strong references, the memory will be deallocated.
+   *
+   * @param p_info Pointer to the control block
+   */
+  void release_weak()
+  {
+    if (weak_count.fetch_sub(1, std::memory_order_acq_rel) == 0) {
+      // No more weak references, check if we can deallocate
+      if (strong_count.load(std::memory_order_acquire) == 0) {
+        // No strong references either, get the size from the destroy function
+        auto const object_size = destroy(nullptr);
+
+        // Save allocator for deallocating
+        auto alloc = allocator;
+
+        // Deallocate memory
+        alloc.deallocate_bytes(this, object_size);
+      }
+    }
+  }
 };
-
-/**
- * @brief Add strong reference to control block
- *
- * @param p_info Pointer to the control block
- */
-inline void ptr_add_ref(ref_info* p_info)
-{
-  p_info->strong_count.fetch_add(1, std::memory_order_relaxed);
-}
-
-/**
- * @brief Release strong reference from control block
- *
- * If this was the last strong reference, the pointed-to object will be
- * destroyed. If there are no remaining weak references, the memory
- * will also be deallocated.
- *
- * @param p_info Pointer to the control block
- */
-inline void ptr_release(ref_info* p_info)
-{
-  if (p_info->strong_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-    // No more strong references, destroy the object but keep control block
-    // if there are weak references
-
-    // Call the destroy function which will:
-    // 1. Call the destructor of the object
-    // 2. Return the size of the rc for deallocation when needed
-    usize const object_size = p_info->destroy(p_info);
-
-    // If there are no weak references, deallocate memory
-    if (p_info->weak_count.load(std::memory_order_acquire) == 0) {
-      // Save allocator for deallocating
-      auto alloc = p_info->allocator;
-
-      // Deallocate memory
-      alloc.deallocate_bytes(p_info, object_size);
-    }
-  }
-}
-
-/**
- * @brief Add weak reference to control block
- *
- * @param p_info Pointer to the control block
- */
-inline void ptr_add_weak(ref_info* p_info)
-{
-  p_info->weak_count.fetch_add(1, std::memory_order_relaxed);
-}
-
-/**
- * @brief Release weak reference from control block
- *
- * If this was the last weak reference and there are no remaining
- * strong references, the memory will be deallocated.
- *
- * @param p_info Pointer to the control block
- */
-inline void ptr_release_weak(ref_info* p_info)
-{
-  if (p_info->weak_count.fetch_sub(1, std::memory_order_acq_rel) == 0) {
-    // No more weak references, check if we can deallocate
-    if (p_info->strong_count.load(std::memory_order_acquire) == 0) {
-      // No strong references either, get the size from the destroy function
-      auto const object_size = p_info->destroy(nullptr);
-
-      // Save allocator for deallocating
-      auto alloc = p_info->allocator;
-
-      // Deallocate memory
-      alloc.deallocate_bytes(p_info, object_size);
-    }
-  }
-}
 
 /**
  * @brief A wrapper that contains both the ref_info and the actual object
@@ -165,9 +160,13 @@ struct rc
   static usize destroy_function(void const* p_object)
   {
     if (p_object != nullptr) {
+      // Cast back into the original rc<T> type and ...
       auto const* obj = static_cast<rc<T> const*>(p_object);
-      // Call destructor for the object only
+      // Destruct T
       obj->m_object.~T();
+      // Destructor ref_info:
+      //    needed if we use strong_ptr<std::pmr::memory_resource>
+      obj->m_info.~ref_info();
     }
     // Return size for future deallocation
     return sizeof(rc<T>);
@@ -202,7 +201,7 @@ concept array_like = is_array_like_v<T>;
 // TODO(#6): Improve thrown error types
 template<typename T>
 concept non_array_like = !array_like<T>;
-}  // namespace detail
+
 /**
  * @ingroup Error
  * @brief Base exception class for all hal related exceptions
@@ -409,7 +408,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
   }
 
   /**
@@ -427,7 +426,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
   }
 
   /**
@@ -450,7 +449,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
   }
 
   /**
@@ -476,7 +475,7 @@ public:
       release();
       m_ctrl = p_other.m_ctrl;
       m_ptr = p_other.m_ptr;
-      ptr_add_ref(m_ctrl);
+      m_ctrl->add_ref();
     }
     return *this;
   }
@@ -536,7 +535,7 @@ public:
    * @param p_other The strong_ptr to the parent object
    * @param p_member_ptr Pointer-to-member identifying which member to reference
    */
-  template<typename U, detail::non_array_like M>
+  template<typename U, non_array_like M>
   strong_ptr(strong_ptr<U> const& p_other,
              // clang-format off
              M U::* p_member_ptr
@@ -546,7 +545,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(&((*p_other).*p_member_ptr))
   {
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
   }
 
   /**
@@ -592,7 +591,7 @@ public:
     throw_if_out_of_bounds(N, p_index);
     m_ctrl = p_other.m_ctrl;
     m_ptr = &((*p_other).*p_array_ptr)[p_index];
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
   }
 
   // NOLINTBEGIN(modernize-avoid-c-arrays)
@@ -637,7 +636,7 @@ public:
     throw_if_out_of_bounds(N, p_index);
     m_ctrl = p_other.m_ctrl;
     m_ptr = &((*p_other).*p_array_ptr)[p_index];
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
   }
   // NOLINTEND(modernize-avoid-c-arrays)
 
@@ -666,7 +665,7 @@ public:
       release();
       m_ctrl = p_other.m_ctrl;
       m_ptr = p_other.m_ptr;
-      ptr_add_ref(m_ctrl);
+      m_ctrl->add_ref();
     }
     return *this;
   }
@@ -688,7 +687,7 @@ public:
     release();
     m_ctrl = p_other.m_ctrl;
     m_ptr = p_other.m_ptr;
-    ptr_add_ref(m_ctrl);
+    m_ctrl->add_ref();
     return *this;
   }
 
@@ -769,7 +768,7 @@ private:
 
   // Internal constructor with control block and pointer - used by make() and
   // aliasing
-  strong_ptr(detail::ref_info* p_ctrl, T* p_ptr) noexcept
+  strong_ptr(ref_info* p_ctrl, T* p_ptr) noexcept
     : m_ctrl(p_ctrl)
     , m_ptr(p_ptr)
   {
@@ -778,11 +777,11 @@ private:
   void release()
   {
     if (m_ctrl) {
-      ptr_release(m_ctrl);
+      m_ctrl->release();
     }
   }
 
-  detail::ref_info* m_ctrl = nullptr;
+  ref_info* m_ctrl = nullptr;
   T* m_ptr = nullptr;
 };
 
@@ -977,7 +976,7 @@ public:
     , m_ptr(p_strong.m_ptr)
   {
     if (m_ctrl) {
-      ptr_add_weak(m_ctrl);
+      m_ctrl->add_weak();
     }
   }
 
@@ -991,7 +990,7 @@ public:
     , m_ptr(p_other.m_ptr)
   {
     if (m_ctrl) {
-      ptr_add_weak(m_ctrl);
+      m_ctrl->add_weak();
     }
   }
 
@@ -1023,7 +1022,7 @@ public:
     , m_ptr(static_cast<T*>(p_other.m_ptr))
   {
     if (m_ctrl) {
-      ptr_add_weak(m_ctrl);
+      m_ctrl->add_weak();
     }
   }
 
@@ -1060,7 +1059,7 @@ public:
     , m_ptr(static_cast<T*>(p_other.m_ptr))
   {
     if (m_ctrl) {
-      ptr_add_weak(m_ctrl);
+      m_ctrl->add_weak();
     }
   }
 
@@ -1073,7 +1072,7 @@ public:
   ~weak_ptr()
   {
     if (m_ctrl) {
-      ptr_release_weak(m_ctrl);
+      m_ctrl->release_weak();
     }
   }
 
@@ -1157,7 +1156,7 @@ public:
   }
 
 private:
-  detail::ref_info* m_ctrl = nullptr;
+  ref_info* m_ctrl = nullptr;
   T* m_ptr = nullptr;
 };
 
@@ -1859,7 +1858,7 @@ template<class T, typename... Args>
   std::pmr::polymorphic_allocator<> p_alloc,
   Args&&... p_args)
 {
-  using rc_t = detail::rc<T>;
+  using rc_t = rc<T>;
 
   rc_t* obj = nullptr;
 

@@ -31,12 +31,11 @@ class strong_ptr_conan(ConanFile):
     url = "https://github.com/libhal/strong_ptr"
     homepage = "https://github.com/libhal/strong_ptr"
     description = (
-        "Safe and easy to use alternative to std::shared_ptr for memory constrained systems")
+        "An non-null alternative to std::shared_ptr for memory constrained systems and fewer footguns.")
     topics = ("memory", "dynamic", "polymorphic_allocator",
               "pointer", "pointers")
     settings = "compiler", "build_type", "os", "arch"
     exports_sources = "modules/*", "tests/*", "CMakeLists.txt", "LICENSE"
-    package_type = "static-library"
     shared = False
 
     @property

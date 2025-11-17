@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.30)
 
 # Generate compile commands for anyone using our libraries.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -24,7 +24,9 @@ project(strong_ptr LANGUAGES CXX)
 # ==============================================================================
 
 add_library(strong_ptr STATIC)
+
 target_compile_features(strong_ptr PUBLIC cxx_std_23)
+
 target_sources(strong_ptr PUBLIC
     FILE_SET CXX_MODULES
     TYPE CXX_MODULES
@@ -56,13 +58,31 @@ if(CMAKE_CROSSCOMPILING)
 else()
     find_package(ut REQUIRED)
     add_executable(strong_ptr_unit_test)
-    target_sources(strong_ptr_unit_test
-      PRIVATE
-          tests/main.test.cpp
-          tests/strong_ptr.test.cpp
+    target_sources(strong_ptr_unit_test PUBLIC
+        FILE_SET CXX_MODULES
+        TYPE CXX_MODULES
+        FILES
+        tests/unit_test.cppm
+        PRIVATE
+        tests/main.test.cpp
+        tests/optional_ptr.test.cpp
+        tests/enable_from_this.test.cpp
+        tests/strong_ptr.test.cpp
+        tests/weak_ptr.test.cpp
+        tests/mixins.test.cpp
     )
     target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
-    target_link_libraries(strong_ptr_unit_test PRIVATE strong_ptr Boost::ut)
+    target_compile_options(strong_ptr_unit_test PUBLIC
+        -g
+        -Werror
+        -Wall
+        -Wextra
+        -Wshadow
+        -pedantic
+        -fsanitize=address
+    )
+    target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
+    target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
 
     message(STATUS "Executing unit tests!")
     add_custom_target(run_tests ALL
