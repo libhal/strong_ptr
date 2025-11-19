@@ -55,25 +55,25 @@ public:
   explicit test_class(int p_value = 0)
     : m_value(p_value)
   {
-    ++s_instance_count;
+    ++instance_count;
   }
 
   ~test_class()
   {
-    --s_instance_count;
+    --instance_count;
   }
 
   test_class(test_class const& p_other)
   {
     m_value = p_other.m_value;
-    ++s_instance_count;
+    ++instance_count;
   }
 
   test_class& operator=(test_class const& p_other)
   {
     if (this != &p_other) {
       m_value = p_other.m_value;
-      ++s_instance_count;
+      ++instance_count;
     }
     return *this;
   }
@@ -102,7 +102,7 @@ public:
   }
 
   // Static counter for number of instances
-  inline static int s_instance_count = 0;
+  inline static int instance_count = 0;
 
 private:
   int m_value;

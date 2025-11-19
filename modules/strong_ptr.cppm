@@ -194,7 +194,7 @@ struct is_array_like<std::array<T, N>> : std::true_type
 
 // Helper variable template
 template<typename T>
-inline constexpr bool is_array_like_v = is_array_like<T>::value;
+constexpr bool is_array_like_v = is_array_like<T>::value;
 
 // Concept for array-like types
 template<typename T>
@@ -308,6 +308,16 @@ struct nullptr_access : public exception
 };
 
 /**
+ * @brief API tag used to create a strong_ptr which points to static memory
+ *
+ * As the name implies this is unsafe and is up to the developer to ensure that
+ * the object passed to strong_ptr actually has static storage duration.
+ *
+ */
+struct unsafe_assume_static_tag
+{};
+
+/**
  * @brief A non-nullable strong reference counted pointer
  *
  * strong_ptr is a smart pointer that maintains shared ownership of an object
@@ -325,16 +335,16 @@ struct nullptr_access : public exception
  *
  * ```C++
  * // Create a strong_ptr to an object
- * auto ptr = mem::make_strong_ptr<my_i2c_driver>(allocator, arg1, arg2);
+ * auto i2c = mem::make_strong_ptr<my_i2c_driver>(allocator, arg1, arg2);
  *
  * // Use the object using dereference (*) operator
- * (*ptr).configure({ .clock_rate = 250_kHz });
+ * (*i2c).configure({ .clock_rate = 250_kHz });
  *
  * // OR use the object using arrow (->) operator
- * ptr->configure({ .clock_rate = 250_kHz });
+ * i2c->configure({ .clock_rate = 250_kHz });
  *
  * // Share ownership with another driver or object
- * auto my_imu = mem::make_strong_ptr<my_driver>(allocator, ptr, 0x13);
+ * auto sensor = mem::make_strong_ptr<my_sensor>(allocator, i2c, 0x13);
  * ```
  *
  * @tparam T The type of the managed object
@@ -352,6 +362,33 @@ public:
   strong_ptr(std::nullptr_t) = delete;
 
   /**
+   * @brief Create a strong_ptr that points to points to an object with static
+   * storage duration.
+   *
+   * This API MUST only be used with objects with static storage duration.
+   * Without that precondition met, it is UB to create such a strong_ptr.
+   *
+   * There is no way in C++23 and below to determine if an lvalue passed has
+   * static storage duration. With C++26 and `std::has_static_storage_duration`
+   * we can determine this at compile time and provide a compile time error if
+   * the passed lvalue is not an object with static storage duration. This
+   * constructor will be deprecated once the library migrates to C++26.
+   *
+   * Since the original object was statically allocated, there is no need for a
+   * ref counted control block and thus no allocation occurs. `use_count()` will
+   * return 0 meaning that the object is statically allocated.
+   *
+   * @param p_object - a statically allocated object to
+   * @return strong_ptr<T> - A strong_ptr pointing to lvalue which should have
+   * static storage duration.
+   */
+  strong_ptr(unsafe_assume_static_tag, T& p_object)
+    : m_ctrl(nullptr)
+    , m_ptr(&p_object)
+  {
+  }
+
+  /**
    * @brief Copy constructor
    *
    * Creates a new strong reference to the same object.
@@ -362,7 +399,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -380,7 +417,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -403,7 +440,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -429,7 +466,7 @@ public:
       release();
       m_ctrl = p_other.m_ctrl;
       m_ptr = p_other.m_ptr;
-      m_ctrl->add_ref();
+      add_ref();
     }
     return *this;
   }
@@ -499,7 +536,7 @@ public:
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(&((*p_other).*p_member_ptr))
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -545,7 +582,7 @@ public:
     throw_if_out_of_bounds(N, p_index);
     m_ctrl = p_other.m_ctrl;
     m_ptr = &((*p_other).*p_array_ptr)[p_index];
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   // NOLINTBEGIN(modernize-avoid-c-arrays)
@@ -590,7 +627,7 @@ public:
     throw_if_out_of_bounds(N, p_index);
     m_ctrl = p_other.m_ctrl;
     m_ptr = &((*p_other).*p_array_ptr)[p_index];
-    m_ctrl->add_ref();
+    add_ref();
   }
   // NOLINTEND(modernize-avoid-c-arrays)
 
@@ -619,7 +656,7 @@ public:
       release();
       m_ctrl = p_other.m_ctrl;
       m_ptr = p_other.m_ptr;
-      m_ctrl->add_ref();
+      add_ref();
     }
     return *this;
   }
@@ -641,7 +678,7 @@ public:
     release();
     m_ctrl = p_other.m_ctrl;
     m_ptr = p_other.m_ptr;
-    m_ctrl->add_ref();
+    add_ref();
     return *this;
   }
 
@@ -698,6 +735,18 @@ public:
     return m_ctrl ? m_ctrl->strong_count.load(std::memory_order_relaxed) : 0;
   }
 
+  /**
+   * @brief Returns if the object this is pointing to is statically allocated or
+   * not.
+   *
+   * @return true - object is assumed to have static storage duration.
+   * @return false - object has dynamic storage duration.
+   */
+  constexpr bool is_dynamic()
+  {
+    return m_ctrl != nullptr;
+  }
+
 private:
   template<class U>
   friend class enable_strong_from_this;
@@ -705,6 +754,9 @@ private:
   template<class U, typename... Args>
   friend strong_ptr<U> make_strong_ptr(std::pmr::polymorphic_allocator<>,
                                        Args&&...);
+
+  template<class U, typename... Args, auto>
+  friend strong_ptr<T> make_static_strong_ptr(Args&&... p_args);
 
   template<typename U>
   friend class strong_ptr;
@@ -715,10 +767,17 @@ private:
   template<typename U>
   friend class optional_ptr;
 
-  inline void throw_if_out_of_bounds(std::size_t p_size, std::size_t p_index)
+  void throw_if_out_of_bounds(std::size_t p_size, std::size_t p_index)
   {
     if (p_index >= p_size) {
       throw mem::out_of_range({ .m_index = p_index, .m_capacity = p_size });
+    }
+  }
+
+  void add_ref()
+  {
+    if (is_dynamic()) {
+      m_ctrl->add_ref();
     }
   }
 
@@ -728,7 +787,7 @@ private:
     : m_ctrl(p_ctrl)
     , m_ptr(p_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   struct bypass_ref_count
@@ -744,7 +803,7 @@ private:
 
   void release()
   {
-    if (m_ctrl) {
+    if (is_dynamic()) {
       m_ctrl->release();
     }
   }
@@ -1481,6 +1540,23 @@ public:
   }
 
   /**
+   * @brief Get the current reference count
+   *
+   * This is primarily for testing purposes. To determine if an optional_ptr
+   * points to a statically allocated object, this API must return 0 and
+   * `is_engaged()` must return true.
+   *
+   * @return The number of strong references to the managed object. Returns 0 if
+   * this pointer is nullptr.
+   */
+  [[nodiscard]] auto use_count() const noexcept
+  {
+    return is_engaged()
+             ? m_value.m_ctrl->strong_count.load(std::memory_order_relaxed)
+             : 0;
+  }
+
+  /**
    * @brief Swap the contents of this optional_ptr with another
    *
    * @param other The optional_ptr to swap with
@@ -1537,7 +1613,7 @@ private:
  * @return An optional_ptr that is either empty or contains a strong_ptr
  */
 template<typename T>
-[[nodiscard]] inline optional_ptr<T> weak_ptr<T>::lock() const noexcept
+[[nodiscard]] optional_ptr<T> weak_ptr<T>::lock() const noexcept
 {
   if (expired()) {
     return nullptr;
@@ -1823,7 +1899,7 @@ private:
  * @throws std::bad_alloc if memory allocation fails
  */
 template<class T, typename... Args>
-[[nodiscard]] inline strong_ptr<T> make_strong_ptr(
+[[nodiscard]] strong_ptr<T> make_strong_ptr(
   std::pmr::polymorphic_allocator<> p_alloc,
   Args&&... p_args)
 {

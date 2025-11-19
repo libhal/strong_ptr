@@ -56,7 +56,7 @@ boost::ut::suite<"weak_ptr_test"> weak_ptr_test = []() {
 
     // Previous strong_ptr should be destroyed, but the weak_ptr should still
     // exist
-    expect(that % 1 == test_class::s_instance_count)
+    expect(that % 1 == test_class::instance_count)
       << "Only one test_class should exist\n";
   };
 
@@ -122,7 +122,7 @@ boost::ut::suite<"weak_ptr_test"> weak_ptr_test = []() {
 
       expect(weak.expired())
         << "Weak pointer should be expired after strong_ptr is destroyed\n";
-      expect(that % 0 == test_class::s_instance_count)
+      expect(that % 0 == test_class::instance_count)
         << "Object should be destroyed\n";
 
       auto locked = weak.lock();
