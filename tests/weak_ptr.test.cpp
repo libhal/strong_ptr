@@ -130,33 +130,4 @@ boost::ut::suite<"weak_ptr_test"> weak_ptr_test = []() {
         << "Locking expired weak_ptr should return null optional\n";
     };
 };
-
-// bad_weak_ptr exception test suite
-boost::ut::suite<"bad_weak_ptr_test"> bad_weak_ptr_test = []() {
-  using namespace boost::ut;
-
-  "exception_type"_test = [&] {
-    // Test that bad_weak_ptr is properly derived from mem::exception
-    static_assert(std::is_base_of_v<mem::exception, mem::bad_weak_ptr>);
-
-    // Test construction
-    expect(nothrow([&] {
-      mem::bad_weak_ptr ex(nullptr);
-      // Should construct without throwing
-    }));
-  };
-
-  "thrown_from_enable_strong_from_this"_test = [&] {
-    // This test would require creating an unmanaged object, which is
-    // prevented by strong_ptr_only. The exception handling is tested
-    // indirectly through the normal usage patterns.
-
-    // Just verify that normal usage doesn't throw
-    auto obj = make_strong_ptr<self_aware_class>(test_allocator, 42);
-    expect(nothrow([&] {
-      auto self = obj->strong_from_this();
-      expect(that % 42 == self->value());
-    }));
-  };
-};
 }  // namespace mem

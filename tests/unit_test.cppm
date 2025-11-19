@@ -14,13 +14,14 @@
 
 module;
 
+#include <array>
 #include <memory_resource>
 
 export module strong_ptr_unit_test;
 
-import strong_ptr;
+export import strong_ptr;
 
-export namespace mem {
+export namespace mem::inline v1 {
 // Base class for testing polymorphism
 class base_class
 {
@@ -212,4 +213,4 @@ std::array<std::byte, 4096 * 16> buffer{};
 std::pmr::monotonic_buffer_resource test_resource{ buffer.data(),
                                                    buffer.size() };
 std::pmr::polymorphic_allocator<> test_allocator{ &test_resource };
-}  // namespace mem
+}  // namespace mem::inline v1

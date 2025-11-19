@@ -14,8 +14,11 @@
 
 module;
 
+#include <cstddef>
+
 #include <array>
 #include <atomic>
+#include <exception>
 #include <memory_resource>
 #include <system_error>
 #include <type_traits>
@@ -24,9 +27,6 @@ module;
 export module strong_ptr;
 
 export namespace mem::inline v1 {
-using usize = std::uintptr_t;
-using i32 = std::int32_t;
-using u32 = std::uint32_t;
 
 // Forward declarations
 template<typename T>
@@ -54,13 +54,13 @@ struct ref_info
    * If a nullptr is passed to the destroy function, it returns the object size
    * but does not destroy the object.
    */
-  using destroy_fn_t = usize(void const*);
+  using type_erased_destruct_function_t = std::size_t(void const*);
 
   /// Initialize to 1 since creation implies a reference
   std::pmr::polymorphic_allocator<> allocator;
-  destroy_fn_t* destroy;
-  std::atomic<i32> strong_count = 1;
-  std::atomic<i32> weak_count = 0;
+  type_erased_destruct_function_t* destroy;
+  std::atomic<std::uint32_t> strong_count = 0;
+  std::atomic<std::uint32_t> weak_count = 0;
 
   /**
    * @brief Add strong reference to control block
@@ -80,14 +80,17 @@ struct ref_info
    */
   void release()
   {
-    if (strong_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    // Note: fetch_sub returns the previous value, if it was 1 and we subtracted
+    // 1, then the final value is 0. We check below 1 just in case another
+    // thread performs a fetch_sub and gets a 0 or negative value.
+    if (strong_count.fetch_sub(1, std::memory_order_acq_rel) <= 1) {
       // No more strong references, destroy the object but keep control block
       // if there are weak references
 
       // Call the destroy function which will:
       // 1. Call the destructor of the object
       // 2. Return the size of the rc for deallocation when needed
-      usize const object_size = destroy(this);
+      auto const object_size = destroy(this);
 
       // If there are no weak references, deallocate memory
       if (weak_count.load(std::memory_order_acquire) == 0) {
@@ -151,13 +154,13 @@ struct rc
   // Constructor that forwards arguments to the object
   template<typename... Args>
   rc(std::pmr::polymorphic_allocator<> p_alloc, Args&&... args)
-    : m_info{ .allocator = p_alloc, .destroy = &destroy_function }
+    : m_info{ .allocator = p_alloc,
+              .destroy = &destruct_this_type_and_return_size }
     , m_object(std::forward<Args>(args)...)
   {
   }
 
-  // Static function to destroy an instance and return its size
-  static usize destroy_function(void const* p_object)
+  static std::size_t destruct_this_type_and_return_size(void const* p_object)
   {
     if (p_object != nullptr) {
       // Cast back into the original rc<T> type and ...
@@ -198,7 +201,6 @@ template<typename T>
 concept array_like = is_array_like_v<T>;
 
 // Concept for non-array-like types
-// TODO(#6): Improve thrown error types
 template<typename T>
 concept non_array_like = !array_like<T>;
 
@@ -207,49 +209,12 @@ concept non_array_like = !array_like<T>;
  * @brief Base exception class for all hal related exceptions
  *
  */
-class exception
+class exception : public std::exception
 {
 public:
-  constexpr exception(std::errc p_error_code, void const* p_instance)
-    : m_instance(p_instance)
-    , m_error_code(p_error_code)
+  constexpr exception(std::errc p_error_code)
+    : m_error_code(p_error_code)
   {
-    static_cast<void>(m_reserved0);
-    static_cast<void>(m_reserved1);
-    static_cast<void>(m_reserved2);
-    static_cast<void>(m_reserved3);
-  }
-
-  /**
-   * @brief address of the object that threw an exception
-   *
-   * If the exception was thrown by a function, this will be a nullptr. The
-   * purpose of this field is to allow exception handlers additional insight
-   * about what may have gone wrong with the system.
-   *
-   * Use cases:
-   *
-   *  1. Logging:
-   *      a. Log the instance object address raw
-   *      b. Use the instance address to determine which driver failed and
-   *         craft a more accurate log message.
-   *  2. Recovery:
-   *      a. Compare the instance address against drivers which are known to
-   *         throw recoverable errors. When the driver or object is found,
-   *         perform operations on that driver to bring the system back into a
-   *         normal state.
-   *
-   * NOTE: about using this for recovery. The instance address should not be
-   * used directly but only with objects that are still accessible by the error
-   * handler. This address should be used for lookup. DO NOT COST away the const
-   * or C-cast this into an object for use. If the object you mean to manipulate
-   * is not at least within the scope catch handler, then the lifetime of that
-   * object cannot be guaranteed and is considered the strongest form of UB.
-   *
-   */
-  [[nodiscard]] void const* instance() const
-  {
-    return m_instance;
   }
 
   /**
@@ -274,10 +239,9 @@ public:
    *
    * 2. Recovery
    *
-   * This can technically be used for recovery, but it is HIGHLY RECOMMENDED to
-   * use the derived classes in their own catch blocks to recover from a
-   * specific error rather than using the base class and extracting its error
-   * code.
+   * This can be used for recovery, but it is HIGHLY RECOMMENDED to use the
+   * derived classes in their own catch blocks to recover from a specific error
+   * rather than using the base class and extracting its error code.
    *
    * @return std::errc - error code represented by the exception
    */
@@ -286,18 +250,13 @@ public:
     return m_error_code;
   }
 
+  char const* what() const noexcept override
+  {
+    return "mem::exception";
+  }
+
 private:
-  void const* m_instance = nullptr;
   std::errc m_error_code{};
-  /// Reserved memory for future use without breaking the ABI
-  /// To keep the layout the same with `exception_abi_origin_v0`, these MUST
-  /// stay u32 into the future. Their names can be changed, and their
-  /// contents can be any format, but they must stay u32 for the
-  /// static_assert check.
-  u32 m_reserved0{};
-  u32 m_reserved1{};
-  u32 m_reserved2{};
-  u32 m_reserved3{};
 };
 
 /**
@@ -310,32 +269,22 @@ struct out_of_range : public exception
 {
   struct info
   {
-    usize m_index;
-    usize m_capacity;
+    std::size_t m_index;
+    std::size_t m_capacity;
   };
 
-  out_of_range(void const* p_instance, info p_info)
-    : exception(std::errc::invalid_argument, p_instance)
-    , m_info(p_info)
+  out_of_range(info p_info)
+    : exception(std::errc::invalid_argument)
+    , info(p_info)
   {
   }
 
-  info m_info;
-};
-
-/**
- * @ingroup Error
- * @brief Raised when a weak_ptr is accessed for an object that has been
- * destroyed.
- *
- */
-struct bad_weak_ptr : public exception
-{
-public:
-  bad_weak_ptr(void* p_weak_ptr_instance)
-    : mem::exception(std::errc::bad_address, p_weak_ptr_instance)
+  char const* what() const noexcept override
   {
+    return "mem::out_of_range";
   }
+
+  info info;
 };
 
 /**
@@ -344,12 +293,17 @@ public:
  * optional_ptr.
  *
  */
-struct bad_optional_ptr_access : public exception
+struct nullptr_access : public exception
 {
 
-  bad_optional_ptr_access(void const* p_instance)
-    : exception(std::errc::invalid_argument, p_instance)
+  nullptr_access()
+    : exception(std::errc::invalid_argument)
   {
+  }
+
+  char const* what() const noexcept override
+  {
+    return "mem::nullptr_access";
   }
 };
 
@@ -745,6 +699,9 @@ public:
   }
 
 private:
+  template<class U>
+  friend class enable_strong_from_this;
+
   template<class U, typename... Args>
   friend strong_ptr<U> make_strong_ptr(std::pmr::polymorphic_allocator<>,
                                        Args&&...);
@@ -757,18 +714,29 @@ private:
 
   template<typename U>
   friend class optional_ptr;
-  // TODO: make replacement error structs
-  inline void throw_if_out_of_bounds(usize p_size, usize p_index)
+
+  inline void throw_if_out_of_bounds(std::size_t p_size, std::size_t p_index)
   {
     if (p_index >= p_size) {
-      throw(
-        mem::out_of_range(this, { .m_index = p_index, .m_capacity = p_size }));
+      throw mem::out_of_range({ .m_index = p_index, .m_capacity = p_size });
     }
   }
 
   // Internal constructor with control block and pointer - used by make() and
   // aliasing
   strong_ptr(ref_info* p_ctrl, T* p_ptr) noexcept
+    : m_ctrl(p_ctrl)
+    , m_ptr(p_ptr)
+  {
+    m_ctrl->add_ref();
+  }
+
+  struct bypass_ref_count
+  {};
+
+  // Internal constructor used by the weak_ptr::lock() to create a strong_ptr
+  // without incrementing the strong count since it handles that itself.
+  strong_ptr(bypass_ref_count, ref_info* p_ctrl, T* p_ptr) noexcept
     : m_ctrl(p_ctrl)
     , m_ptr(p_ptr)
   {
@@ -812,7 +780,7 @@ private:
  *
  * @tparam T The derived class type
  */
-template<typename T>
+template<class T>
 class enable_strong_from_this
 {
 public:
@@ -820,31 +788,22 @@ public:
    * @brief Get a strong_ptr to this object
    *
    * @return strong_ptr<T> pointing to this object
-   * @throws mem::bad_weak_ptr if this object is not managed by a strong_ptr
    */
   [[nodiscard]] strong_ptr<T> strong_from_this()
   {
-    auto locked = m_weak_this.lock();
-    if (!locked) {
-      throw(mem::bad_weak_ptr(&m_weak_this));
-    }
-    return locked.value();
+    return strong_ptr<T>(&m_ref_counted_self->m_info,
+                         &m_ref_counted_self->m_object);
   }
 
   /**
    * @brief Get a strong_ptr to this object (const version)
    *
    * @return strong_ptr<T const> pointing to this object
-   * @throws mem::bad_weak_ptr if this object is not managed by a strong_ptr
    */
   [[nodiscard]] strong_ptr<T const> strong_from_this() const
   {
-    auto locked = m_weak_this.lock();
-    if (!locked) {
-      throw(mem::bad_weak_ptr(&m_weak_this));
-    }
-    // Cast the strong_ptr<T> to strong_ptr<T const>
-    return strong_ptr<T const>(locked.value());
+    return strong_ptr<T>(&m_ref_counted_self->m_info,
+                         &m_ref_counted_self->m_object);
   }
 
   /**
@@ -854,7 +813,7 @@ public:
    */
   [[nodiscard]] weak_ptr<T> weak_from_this() noexcept
   {
-    return m_weak_this;
+    return strong_from_this();
   }
 
   /**
@@ -864,7 +823,7 @@ public:
    */
   [[nodiscard]] weak_ptr<T const> weak_from_this() const noexcept
   {
-    return weak_ptr<T const>(m_weak_this);
+    return strong_from_this();
   }
 
 protected:
@@ -910,12 +869,12 @@ private:
    *
    * @param p_self The strong_ptr that manages this object
    */
-  void init_weak_this(strong_ptr<T> const& p_self) noexcept
+  void init_weak_this(rc<T>* p_self) noexcept
   {
-    m_weak_this = p_self;
+    m_ref_counted_self = p_self;
   }
 
-  mutable weak_ptr<T> m_weak_this;
+  mutable rc<T>* m_ref_counted_self;
 };
 
 template<typename T>
@@ -941,7 +900,7 @@ class optional_ptr;
  * // Later, try to get a strong reference
  * if (auto locked = weak.lock()) {
  *   // Use the object via locked
- *   locked->doSomething();
+ *   locked->do_something();
  * } else {
  *   // Object has been destroyed
  * }
@@ -1185,7 +1144,7 @@ private:
  * // Check if the optional_ptr is engaged
  * if (opt2) {
  *   // Use the contained object
- *   opt2->doSomething();
+ *   opt2->do_something();
  * }
  *
  * // Reset to disengage
@@ -1357,12 +1316,12 @@ public:
    * @brief Access the contained value, throw if not engaged
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr strong_ptr<T>& value()
   {
     if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+      throw mem::nullptr_access();
     }
     return m_value;
   }
@@ -1371,12 +1330,12 @@ public:
    * @brief Access the contained value, throw if not engaged (const version)
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr strong_ptr<T> const& value() const
   {
     if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+      throw mem::nullptr_access();
     }
     return m_value;
   }
@@ -1388,7 +1347,7 @@ public:
    * when the optional_ptr is engaged.
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr operator strong_ptr<T>()
   {
@@ -1399,7 +1358,7 @@ public:
    * @brief Implicitly convert to a strong_ptr<T> (const version)
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr operator strong_ptr<T>() const
   {
@@ -1414,14 +1373,14 @@ public:
    *
    * @tparam U The target type (must be convertible from T)
    * @return A copy of the contained strong_ptr, converted to the target type
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>()
     requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
   {
     if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+      throw mem::nullptr_access();
     }
     // strong_ptr handles the polymorphic conversion
     return strong_ptr<U>(m_value);
@@ -1433,14 +1392,14 @@ public:
    *
    * @tparam U The target type (must be convertible from T)
    * @return A copy of the contained strong_ptr, converted to the target type
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>() const
     requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
   {
     if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+      throw mem::nullptr_access();
     }
     // strong_ptr handles the polymorphic conversion
     return strong_ptr<U>(m_value);
@@ -1587,14 +1546,24 @@ template<typename T>
   // Try to increment the strong count
   auto current_count = m_ctrl->strong_count.load(std::memory_order_relaxed);
   while (current_count > 0) {
-    // TODO(kammce): Consider if this is dangerous
+    // Explanation of this line for future authors. Compare exchange weak will
+    // compare the current_count with the value contained within strong_count
+    // and if they are equal, it will replace the strong_count with
+    // current_count + 1 and the returned value of the function is true. The
+    // function returns false, if the current_count and the value within
+    // strong_count differ. If that happens, current_count gets updated with the
+    // value within strong_count. If the value is updated to 0 then we return a
+    // nullptr like below.
     if (m_ctrl->strong_count.compare_exchange_weak(current_count,
                                                    current_count + 1,
                                                    std::memory_order_acq_rel,
                                                    std::memory_order_relaxed)) {
-      // Successfully incremented
-      auto obj = strong_ptr<T>(m_ctrl, m_ptr);
-      return obj;
+      // Reaching this points means the ref count has been successfully
+      // incremented
+      using bypass = strong_ptr<T>::bypass_ref_count;
+      // Bypass the add_ref because the ref count has already been incremented
+      // above.
+      return strong_ptr<T>(bypass{}, m_ctrl, m_ptr);
     }
   }
 
@@ -1875,7 +1844,7 @@ template<class T, typename... Args>
 
   // Initialize enable_strong_from_this if the type inherits from it
   if constexpr (std::is_base_of_v<enable_strong_from_this<T>, T>) {
-    result->init_weak_this(result);
+    result->init_weak_this(obj);
   }
 
   return result;
