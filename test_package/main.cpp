@@ -12,8 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import std;
 import strong_ptr;
 
 int main()
 {
+  auto ptr = mem::make_strong_ptr<int>(std::pmr::new_delete_resource(), 42);
+  std::println("[ptr](use_count = {}) = {}", ptr.use_count(), *ptr);
+  {
+    std::println("\n{{");
+    mem::optional_ptr<int> ptr2 = ptr;
+    std::println("  optional_ptr<int> created!");
+    std::println("  [ptr2](use_count = {}) = {}", ptr.use_count(), *ptr);
+    std::println("  [ptr](use_count = {}) = {}", ptr.use_count(), *ptr);
+    std::println("  optional_ptr<int> destroyed!");
+    std::println("}}\n");
+  }
+
+  std::println("[ptr](use_count = {}) = {}", ptr.use_count(), *ptr);
+  return 0;
 }

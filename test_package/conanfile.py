@@ -18,7 +18,6 @@ from conan import ConanFile
 from conan.tools.build import cross_building
 from conan.tools.cmake import CMake, cmake_layout, CMakeToolchain, CMakeDeps
 from pathlib import Path
-import os
 
 
 class TestPackageConan(ConanFile):
@@ -26,6 +25,7 @@ class TestPackageConan(ConanFile):
     generators = "VirtualRunEnv"
 
     def build_requirements(self):
+        self.tool_requires("cmake-modules-toolchain/1.0.0")
         self.tool_requires("cmake/4.1.1")
         self.tool_requires("ninja/1.13.1")
 
@@ -58,7 +58,6 @@ class TestPackageConan(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.generator = "Ninja"
-        tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = True
         self._add_arm_specs_if_applicable(tc)
         tc.generate()
 
