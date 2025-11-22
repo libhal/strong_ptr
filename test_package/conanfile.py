@@ -25,7 +25,7 @@ class TestPackageConan(ConanFile):
     generators = "VirtualRunEnv"
 
     def build_requirements(self):
-        self.tool_requires("cmake-modules-toolchain/1.0.0")
+        self.tool_requires("cmake-modules-toolchain/1.0.1")
         self.tool_requires("cmake/4.1.1")
         self.tool_requires("ninja/1.13.1")
 
@@ -35,7 +35,7 @@ class TestPackageConan(ConanFile):
     def layout(self):
         cmake_layout(self)
 
-    def inject_linker_flags(flags: str,  tc: CMakeToolchain) -> str:
+    def inject_linker_flags(self, flags: str,  tc: CMakeToolchain) -> str:
         link_flags = tc.variables.get("CMAKE_EXE_LINKER_FLAGS", "")
         link_flags = link_flags + f" {flags}"
         link_flags = link_flags.strip()
@@ -49,7 +49,7 @@ class TestPackageConan(ConanFile):
         if not should_add_flags:
             return
 
-        LIB_C_FLAGS = "--specs=nano.specs --specs=nosys.specs"
+        LIB_C_FLAGS = "--specs=nano.specs --specs=nosys.specs -mthumb"
         self.output.info(f"Baremetal ARM GCC Profile detected!")
         self.output.info(f'💉 injecting flags >> "{LIB_C_FLAGS}"')
         result = self.inject_linker_flags(LIB_C_FLAGS, tc)

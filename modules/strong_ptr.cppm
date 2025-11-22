@@ -62,8 +62,8 @@ struct ref_info
   /// Initialize to 1 since creation implies a reference
   std::pmr::polymorphic_allocator<> allocator;
   type_erased_destruct_function_t* destroy;
-  std::atomic<std::uint32_t> strong_count = 0;
-  std::atomic<std::uint32_t> weak_count = 0;
+  std::atomic<int> strong_count;
+  std::atomic<int> weak_count;
 
   /**
    * @brief Add strong reference to control block
@@ -161,6 +161,8 @@ struct rc
               .destroy = &destruct_this_type_and_return_size }
     , m_object(std::forward<Args>(args)...)
   {
+    m_info.strong_count = 0;
+    m_info.weak_count = 0;
   }
 
   constexpr static std::size_t destruct_this_type_and_return_size(
@@ -206,7 +208,7 @@ concept array_like = is_array_like_v<T>;
 
 // Concept for non-array-like types
 template<typename T>
-concept non_array_like = !array_like<T>;
+concept non_array_like = not array_like<T>;
 
 /**
  * @ingroup Error
@@ -259,6 +261,11 @@ public:
     return "mem::exception";
   }
 
+  ~exception() override
+  {
+    // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
+  }
+
 private:
   std::errc m_error_code{};
 };
@@ -288,6 +295,11 @@ export struct out_of_range : public exception
     return "mem::out_of_range";
   }
 
+  ~out_of_range() override
+  {
+    // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
+  }
+
   info info;
 };
 
@@ -307,7 +319,12 @@ export struct nullptr_access : public exception
   constexpr char const* what() const noexcept override
   {
     return "mem::nullptr_access";
-  }  // namespace mem::inline v1
+  }
+
+  ~nullptr_access() override
+  {
+    // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
+  }
 };
 
 /**
@@ -494,7 +511,7 @@ public:
     // instantiation of the class. With this conditional, the error only appears
     // when this constructor is used.
     static_assert(
-      std::is_same_v<U, void> && !std::is_same_v<U, void>,
+      std::is_same_v<U, void> && not std::is_same_v<U, void>,
       "Aliasing constructor only works with pointers-to-members "
       "and does not work with arbitrary pointers like std::shared_ptr allows.");
   }
@@ -1151,7 +1168,8 @@ public:
    */
   [[nodiscard]] constexpr bool expired() const noexcept
   {
-    return !m_ctrl || m_ctrl->strong_count.load(std::memory_order_relaxed) == 0;
+    return not m_ctrl ||
+           m_ctrl->strong_count.load(std::memory_order_relaxed) == 0;
   }
 
   /**
@@ -1382,7 +1400,7 @@ public:
    */
   [[nodiscard]] constexpr strong_ptr<T>& value()
   {
-    if (!is_engaged()) {
+    if (not is_engaged()) {
       throw mem::nullptr_access();
     }
     return m_value;
@@ -1396,7 +1414,7 @@ public:
    */
   [[nodiscard]] constexpr strong_ptr<T> const& value() const
   {
-    if (!is_engaged()) {
+    if (not is_engaged()) {
       throw mem::nullptr_access();
     }
     return m_value;
@@ -1439,9 +1457,9 @@ public:
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>()
-    requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
+    requires(std::is_convertible_v<T*, U*> && not std::is_same_v<T, U>)
   {
-    if (!is_engaged()) {
+    if (not is_engaged()) {
       throw mem::nullptr_access();
     }
     // strong_ptr handles the polymorphic conversion
@@ -1458,9 +1476,9 @@ public:
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>() const
-    requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
+    requires(std::is_convertible_v<T*, U*> && not std::is_same_v<T, U>)
   {
-    if (!is_engaged()) {
+    if (not is_engaged()) {
       throw mem::nullptr_access();
     }
     // strong_ptr handles the polymorphic conversion
@@ -1568,10 +1586,10 @@ public:
   {
     if (is_engaged() && other.is_engaged()) {
       std::swap(m_value, other.m_value);
-    } else if (is_engaged() && !other.is_engaged()) {
+    } else if (is_engaged() && not other.is_engaged()) {
       new (&other.m_value) strong_ptr<T>(std::move(m_value));
       reset();
-    } else if (!is_engaged() && other.is_engaged()) {
+    } else if (not is_engaged() && other.is_engaged()) {
       new (&m_value) strong_ptr<T>(std::move(other.m_value));
       other.reset();
     }
@@ -1709,7 +1727,7 @@ export template<typename T, typename U>
 [[nodiscard]] constexpr bool operator!=(strong_ptr<T> const& p_lhs,
                                         strong_ptr<U> const& p_rhs) noexcept
 {
-  return !(p_lhs == p_rhs);
+  return not(p_lhs == p_rhs);
 }
 /**
  * @brief Equality operator for optional_ptr
@@ -1729,7 +1747,7 @@ export template<typename T, typename U>
                                         optional_ptr<U> const& p_rhs) noexcept
 {
   // If both are disengaged, they're equal
-  if (!p_lhs.has_value() && !p_rhs.has_value()) {
+  if (not p_lhs.has_value() && not p_rhs.has_value()) {
     return true;
   }
 
@@ -1757,7 +1775,7 @@ export template<typename T, typename U>
 [[nodiscard]] constexpr bool operator!=(optional_ptr<T> const& p_lhs,
                                         optional_ptr<U> const& p_rhs) noexcept
 {
-  return !(p_lhs == p_rhs);
+  return not(p_lhs == p_rhs);
 }
 
 /**
@@ -1773,7 +1791,7 @@ export template<typename T>
 [[nodiscard]] constexpr bool operator==(optional_ptr<T> const& p_lhs,
                                         std::nullptr_t) noexcept
 {
-  return !p_lhs.has_value();
+  return not p_lhs.has_value();
 }
 
 /**
@@ -1789,7 +1807,7 @@ export template<typename T>
 [[nodiscard]] constexpr bool operator==(std::nullptr_t,
                                         optional_ptr<T> const& p_rhs) noexcept
 {
-  return !p_rhs.has_value();
+  return not p_rhs.has_value();
 }
 
 /**
