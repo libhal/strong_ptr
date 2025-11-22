@@ -23,7 +23,7 @@ int main()
     std::println("\n{{");
     mem::optional_ptr<int> ptr2 = ptr;
     std::println("  optional_ptr<int> created!");
-    std::println("  [ptr2](use_count = {}) = {}", ptr.use_count(), *ptr);
+    std::println("  [ptr2](use_count = {}) = {}", ptr2.use_count(), *ptr2);
     std::println("  [ptr](use_count = {}) = {}", ptr.use_count(), *ptr);
     std::println("  optional_ptr<int> destroyed!");
     std::println("}}\n");
