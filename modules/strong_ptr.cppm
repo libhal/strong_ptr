@@ -26,14 +26,17 @@ module;
 
 export module strong_ptr;
 
-export namespace mem::inline v1 {
+namespace mem::inline v1 {
 
 // Forward declarations
-template<typename T>
+export template<typename T>
 class strong_ptr;
 
-template<typename T>
+export template<typename T>
 class weak_ptr;
+
+export template<typename T>
+class optional_ptr;
 
 /**
  * @brief Control block for reference counting - type erased.
@@ -209,7 +212,7 @@ concept non_array_like = !array_like<T>;
  * @brief Base exception class for all hal related exceptions
  *
  */
-class exception : public std::exception
+export class exception : public std::exception
 {
 public:
   constexpr exception(std::errc p_error_code)
@@ -265,7 +268,7 @@ private:
  * or resource.
  *
  */
-struct out_of_range : public exception
+export struct out_of_range : public exception
 {
   struct info
   {
@@ -293,9 +296,8 @@ struct out_of_range : public exception
  * optional_ptr.
  *
  */
-struct nullptr_access : public exception
+export struct nullptr_access : public exception
 {
-
   nullptr_access()
     : exception(std::errc::invalid_argument)
   {
@@ -304,7 +306,7 @@ struct nullptr_access : public exception
   char const* what() const noexcept override
   {
     return "mem::nullptr_access";
-  }
+  }  // namespace mem::inline v1
 };
 
 /**
@@ -314,7 +316,7 @@ struct nullptr_access : public exception
  * the object passed to strong_ptr actually has static storage duration.
  *
  */
-struct unsafe_assume_static_tag
+export struct unsafe_assume_static_tag
 {};
 
 /**
@@ -839,7 +841,7 @@ private:
  *
  * @tparam T The derived class type
  */
-template<class T>
+export template<class T>
 class enable_strong_from_this
 {
 public:
@@ -1654,7 +1656,7 @@ template<typename T>
  * @param p_lhs First strong_ptr to swap
  * @param p_rhs Second strong_ptr to swap
  */
-template<typename T>
+export template<typename T>
 void swap(strong_ptr<T>& p_lhs, strong_ptr<T>& p_rhs) noexcept
 {
   p_lhs.swap(p_rhs);
@@ -1667,7 +1669,7 @@ void swap(strong_ptr<T>& p_lhs, strong_ptr<T>& p_rhs) noexcept
  * @param p_lhs First weak_ptr to swap
  * @param p_rhs Second weak_ptr to swap
  */
-template<typename T>
+export template<typename T>
 void swap(weak_ptr<T>& p_lhs, weak_ptr<T>& p_rhs) noexcept
 {
   p_lhs.swap(p_rhs);
@@ -1684,7 +1686,7 @@ void swap(weak_ptr<T>& p_lhs, weak_ptr<T>& p_rhs) noexcept
  * @param p_rhs Second strong_ptr to compare
  * @return true if both point to the same object, false otherwise
  */
-template<typename T, typename U>
+export template<typename T, typename U>
 bool operator==(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
 {
   return p_lhs.operator->() == p_rhs.operator->();
@@ -1701,7 +1703,7 @@ bool operator==(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
  * @param p_rhs Second strong_ptr to compare
  * @return true if they point to different objects, false otherwise
  */
-template<typename T, typename U>
+export template<typename T, typename U>
 bool operator!=(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
 {
   return !(p_lhs == p_rhs);
@@ -1719,7 +1721,7 @@ bool operator!=(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
  * @param p_rhs Second optional_ptr to compare
  * @return true if both are equal according to the rules above
  */
-template<typename T, typename U>
+export template<typename T, typename U>
 [[nodiscard]] bool operator==(optional_ptr<T> const& p_lhs,
                               optional_ptr<U> const& p_rhs) noexcept
 {
@@ -1748,7 +1750,7 @@ template<typename T, typename U>
  * @param p_rhs Second optional_ptr to compare
  * @return true if they are not equal
  */
-template<typename T, typename U>
+export template<typename T, typename U>
 [[nodiscard]] bool operator!=(optional_ptr<T> const& p_lhs,
                               optional_ptr<U> const& p_rhs) noexcept
 {
@@ -1764,7 +1766,7 @@ template<typename T, typename U>
  * @param p_lhs The optional_ptr to compare
  * @return true if the optional_ptr is disengaged
  */
-template<typename T>
+export template<typename T>
 [[nodiscard]] bool operator==(optional_ptr<T> const& p_lhs,
                               std::nullptr_t) noexcept
 {
@@ -1780,7 +1782,7 @@ template<typename T>
  * @param p_rhs The optional_ptr to compare
  * @return true if the optional_ptr is disengaged
  */
-template<typename T>
+export template<typename T>
 [[nodiscard]] bool operator==(std::nullptr_t,
                               optional_ptr<T> const& p_rhs) noexcept
 {
@@ -1796,7 +1798,7 @@ template<typename T>
  * @param p_lhs The optional_ptr to compare
  * @return true if the optional_ptr is engaged
  */
-template<typename T>
+export template<typename T>
 [[nodiscard]] bool operator!=(optional_ptr<T> const& p_lhs,
                               std::nullptr_t) noexcept
 {
@@ -1812,7 +1814,7 @@ template<typename T>
  * @param p_rhs The optional_ptr to compare
  * @return true if the optional_ptr is engaged
  */
-template<typename T>
+export template<typename T>
 [[nodiscard]] bool operator!=(std::nullptr_t,
                               optional_ptr<T> const& p_rhs) noexcept
 {
@@ -1825,7 +1827,7 @@ template<typename T>
  * Make the first parameter of your class's constructor(s) in order to limit
  * that constructor to only be used via `make_strong_ptr`.
  */
-class strong_ptr_only_token
+export class strong_ptr_only_token
 {
 private:
   strong_ptr_only_token() = default;
@@ -1898,7 +1900,7 @@ private:
  * @throws Any exception thrown by the object's constructor
  * @throws std::bad_alloc if memory allocation fails
  */
-template<class T, typename... Args>
+export template<class T, typename... Args>
 [[nodiscard]] strong_ptr<T> make_strong_ptr(
   std::pmr::polymorphic_allocator<> p_alloc,
   Args&&... p_args)
