@@ -61,9 +61,9 @@ struct ref_info
 
   /// Initialize to 1 since creation implies a reference
   std::pmr::polymorphic_allocator<> allocator;
-  type_erased_destruct_function_t* destroy;
-  int strong_count;
-  int weak_count;
+  type_erased_destruct_function_t* destroy = nullptr;
+  int strong_count = 0;
+  int weak_count = 0;
 
   /**
    * @brief Add strong reference to control block
@@ -164,8 +164,6 @@ struct rc
               .destroy = &destruct_this_type_and_return_size }
     , m_object(std::forward<Args>(args)...)
   {
-    m_info.strong_count = 0;
-    m_info.weak_count = 0;
   }
 
   constexpr static std::size_t destruct_this_type_and_return_size(
@@ -811,17 +809,6 @@ private:
     add_ref();
   }
 
-  struct bypass_ref_count
-  {};
-
-  // Internal constructor used by the weak_ptr::lock() to create a strong_ptr
-  // without incrementing the strong count since it handles that itself.
-  strong_ptr(bypass_ref_count, ref_info* p_ctrl, T* p_ptr) noexcept
-    : m_ctrl(p_ctrl)
-    , m_ptr(p_ptr)
-  {
-  }
-
   constexpr void release()
   {
     if (is_dynamic()) {
@@ -1073,7 +1060,8 @@ public:
    * Moves a weak_ptr of U to a weak_ptr T where U is convertible to T.
    *
    * @tparam U A type convertible to T
-   * @param p_other The weak_ptr to move from
+   * @param p_other The weak_ptr to move from. Moved from weak_ptr's are
+   * considered expired.
    */
   template<typename U>
   constexpr weak_ptr(weak_ptr<U>&& p_other) noexcept
@@ -1171,7 +1159,17 @@ public:
    */
   [[nodiscard]] constexpr bool expired() const noexcept
   {
-    return not m_ctrl || m_ctrl->strong_count == 0;
+    if (m_ptr == nullptr) {
+      return true;
+    }
+
+    if (m_ctrl != nullptr) {
+      return m_ctrl->strong_count == 0;
+    }
+
+    // If m_ptr != nullptr && m_ctrl == nullptr (static object), return false,
+    // because that object will always exist.
+    return false;
   }
 
   /**
@@ -1642,12 +1640,9 @@ template<typename T>
 
   // Try to increment the strong count
   while (m_ctrl->strong_count > 0) {
-    // Reaching this points means the ref count has been successfully
-    // incremented
-    using bypass = strong_ptr<T>::bypass_ref_count;
     // Bypass the add_ref because the ref count has already been incremented
     // above.
-    return strong_ptr<T>(bypass{}, m_ctrl, m_ptr);
+    return strong_ptr<T>(m_ctrl, m_ptr);
   }
 
   // Strong count is now 0
