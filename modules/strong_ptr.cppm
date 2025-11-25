@@ -62,8 +62,8 @@ struct ref_info
   /// Initialize to 1 since creation implies a reference
   std::pmr::polymorphic_allocator<> allocator;
   type_erased_destruct_function_t* destroy;
-  std::atomic<int> strong_count;
-  std::atomic<int> weak_count;
+  int strong_count;
+  int weak_count;
 
   /**
    * @brief Add strong reference to control block
@@ -71,7 +71,7 @@ struct ref_info
    */
   constexpr void add_ref()
   {
-    strong_count.fetch_add(1, std::memory_order_relaxed);
+    strong_count++;
   }
 
   /**
@@ -86,7 +86,8 @@ struct ref_info
     // Note: fetch_sub returns the previous value, if it was 1 and we subtracted
     // 1, then the final value is 0. We check below 1 just in case another
     // thread performs a fetch_sub and gets a 0 or negative value.
-    if (strong_count.fetch_sub(1, std::memory_order_acq_rel) <= 1) {
+    strong_count--;
+    if (strong_count == 0) {
       // No more strong references, destroy the object but keep control block
       // if there are weak references
 
@@ -96,7 +97,7 @@ struct ref_info
       auto const object_size = destroy(this);
 
       // If there are no weak references, deallocate memory
-      if (weak_count.load(std::memory_order_acquire) == 0) {
+      if (weak_count == 0) {
         // Save allocator for deallocating
         auto alloc = allocator;
 
@@ -112,7 +113,7 @@ struct ref_info
    */
   constexpr void add_weak()
   {
-    weak_count.fetch_add(1, std::memory_order_relaxed);
+    weak_count--;
   }
 
   /**
@@ -125,10 +126,12 @@ struct ref_info
    */
   constexpr void release_weak()
   {
-    if (weak_count.fetch_sub(1, std::memory_order_acq_rel) == 0) {
+    weak_count--;
+    if (weak_count == 0) {
       // No more weak references, check if we can deallocate
-      if (strong_count.load(std::memory_order_acquire) == 0) {
-        // No strong references either, get the size from the destroy function
+      if (strong_count == 0) {
+        // No strong references remain
+        // Get the size from the destroy function
         auto const object_size = destroy(nullptr);
 
         // Save allocator for deallocating
@@ -752,7 +755,7 @@ public:
    */
   [[nodiscard]] constexpr auto use_count() const noexcept
   {
-    return m_ctrl ? m_ctrl->strong_count.load(std::memory_order_relaxed) : 0;
+    return m_ctrl ? m_ctrl->strong_count : 0;
   }
 
   /**
@@ -1168,8 +1171,7 @@ public:
    */
   [[nodiscard]] constexpr bool expired() const noexcept
   {
-    return not m_ctrl ||
-           m_ctrl->strong_count.load(std::memory_order_relaxed) == 0;
+    return not m_ctrl || m_ctrl->strong_count == 0;
   }
 
   /**
@@ -1191,7 +1193,7 @@ public:
    */
   [[nodiscard]] constexpr auto use_count() const noexcept
   {
-    return m_ctrl ? m_ctrl->strong_count.load(std::memory_order_relaxed) : 0;
+    return m_ctrl ? m_ctrl->strong_count : 0;
   }
 
 private:
@@ -1572,9 +1574,7 @@ public:
    */
   [[nodiscard]] constexpr auto use_count() const noexcept
   {
-    return is_engaged()
-             ? m_value.m_ctrl->strong_count.load(std::memory_order_relaxed)
-             : 0;
+    return is_engaged() ? m_value.m_ctrl->strong_count : 0;
   }
 
   /**
@@ -1641,27 +1641,13 @@ template<typename T>
   }
 
   // Try to increment the strong count
-  auto current_count = m_ctrl->strong_count.load(std::memory_order_relaxed);
-  while (current_count > 0) {
-    // Explanation of this line for future authors. Compare exchange weak will
-    // compare the current_count with the value contained within strong_count
-    // and if they are equal, it will replace the strong_count with
-    // current_count + 1 and the returned value of the function is true. The
-    // function returns false, if the current_count and the value within
-    // strong_count differ. If that happens, current_count gets updated with the
-    // value within strong_count. If the value is updated to 0 then we return a
-    // nullptr like below.
-    if (m_ctrl->strong_count.compare_exchange_weak(current_count,
-                                                   current_count + 1,
-                                                   std::memory_order_acq_rel,
-                                                   std::memory_order_relaxed)) {
-      // Reaching this points means the ref count has been successfully
-      // incremented
-      using bypass = strong_ptr<T>::bypass_ref_count;
-      // Bypass the add_ref because the ref count has already been incremented
-      // above.
-      return strong_ptr<T>(bypass{}, m_ctrl, m_ptr);
-    }
+  while (m_ctrl->strong_count > 0) {
+    // Reaching this points means the ref count has been successfully
+    // incremented
+    using bypass = strong_ptr<T>::bypass_ref_count;
+    // Bypass the add_ref because the ref count has already been incremented
+    // above.
+    return strong_ptr<T>(bypass{}, m_ctrl, m_ptr);
   }
 
   // Strong count is now 0
