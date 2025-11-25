@@ -25,9 +25,7 @@ class TestPackageConan(ConanFile):
     generators = "VirtualRunEnv"
 
     def build_requirements(self):
-        self.tool_requires("cmake-modules-toolchain/1.0.1")
-        self.tool_requires("cmake/4.1.1")
-        self.tool_requires("ninja/1.13.1")
+        self.tool_requires("cmake-modules-toolchain/1.0.2")
 
     def requirements(self):
         self.requires(self.tested_reference_str)
@@ -57,7 +55,6 @@ class TestPackageConan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.generator = "Ninja"
         self._add_arm_specs_if_applicable(tc)
         tc.generate()
 
