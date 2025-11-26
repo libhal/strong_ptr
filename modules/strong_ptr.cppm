@@ -60,10 +60,20 @@ struct ref_info
   using type_erased_destruct_function_t = std::size_t(void const*);
 
   /// Initialize to 1 since creation implies a reference
-  std::pmr::polymorphic_allocator<> allocator;
-  type_erased_destruct_function_t* destroy;
-  int strong_count;
-  int weak_count;
+  std::pmr::memory_resource* allocator;
+  type_erased_destruct_function_t* destroy = nullptr;
+  int strong_count = 0;
+  int weak_count = 0;
+
+  // Add explicit constructor to avoid aggregate initialization issues
+  constexpr ref_info(std::pmr::memory_resource* p_alloc,
+                     type_erased_destruct_function_t* p_destroy)
+    : allocator(p_alloc)
+    , destroy(p_destroy)
+    , strong_count(0)
+    , weak_count(0)
+  {
+  }
 
   /**
    * @brief Add strong reference to control block
@@ -102,7 +112,7 @@ struct ref_info
         auto alloc = allocator;
 
         // Deallocate memory
-        alloc.deallocate_bytes(this, object_size);
+        alloc->deallocate(this, object_size);
       }
     }
   }
@@ -138,7 +148,7 @@ struct ref_info
         auto alloc = allocator;
 
         // Deallocate memory
-        alloc.deallocate_bytes(this, object_size);
+        alloc->deallocate(this, object_size);
       }
     }
   }
@@ -159,13 +169,10 @@ struct rc
 
   // Constructor that forwards arguments to the object
   template<typename... Args>
-  constexpr rc(std::pmr::polymorphic_allocator<> p_alloc, Args&&... args)
-    : m_info{ .allocator = p_alloc,
-              .destroy = &destruct_this_type_and_return_size }
+  constexpr rc(std::pmr::memory_resource* p_alloc, Args&&... args)
+    : m_info(p_alloc, &destruct_this_type_and_return_size)
     , m_object(std::forward<Args>(args)...)
   {
-    m_info.strong_count = 0;
-    m_info.weak_count = 0;
   }
 
   constexpr static std::size_t destruct_this_type_and_return_size(
@@ -775,9 +782,8 @@ private:
   friend class enable_strong_from_this;
 
   template<class U, typename... Args>
-  friend constexpr strong_ptr<U> make_strong_ptr(
-    std::pmr::polymorphic_allocator<>,
-    Args&&...);
+  friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
+                                                 Args&&...);
 
   template<typename U>
   friend class strong_ptr;
@@ -809,17 +815,6 @@ private:
     , m_ptr(p_ptr)
   {
     add_ref();
-  }
-
-  struct bypass_ref_count
-  {};
-
-  // Internal constructor used by the weak_ptr::lock() to create a strong_ptr
-  // without incrementing the strong count since it handles that itself.
-  strong_ptr(bypass_ref_count, ref_info* p_ctrl, T* p_ptr) noexcept
-    : m_ctrl(p_ctrl)
-    , m_ptr(p_ptr)
-  {
   }
 
   constexpr void release()
@@ -942,9 +937,8 @@ protected:
 
 private:
   template<class U, typename... Args>
-  friend constexpr strong_ptr<U> make_strong_ptr(
-    std::pmr::polymorphic_allocator<>,
-    Args&&...);
+  friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
+                                                 Args&&...);
 
   /**
    * @brief Initialize the weak reference (called by make_strong_ptr)
@@ -1073,7 +1067,8 @@ public:
    * Moves a weak_ptr of U to a weak_ptr T where U is convertible to T.
    *
    * @tparam U A type convertible to T
-   * @param p_other The weak_ptr to move from
+   * @param p_other The weak_ptr to move from. Moved from weak_ptr's are
+   * considered expired.
    */
   template<typename U>
   constexpr weak_ptr(weak_ptr<U>&& p_other) noexcept
@@ -1171,7 +1166,17 @@ public:
    */
   [[nodiscard]] constexpr bool expired() const noexcept
   {
-    return not m_ctrl || m_ctrl->strong_count == 0;
+    if (m_ptr == nullptr) {
+      return true;
+    }
+
+    if (m_ctrl != nullptr) {
+      return m_ctrl->strong_count == 0;
+    }
+
+    // If m_ptr != nullptr && m_ctrl == nullptr (static object), return false,
+    // because that object will always exist.
+    return false;
   }
 
   /**
@@ -1642,12 +1647,9 @@ template<typename T>
 
   // Try to increment the strong count
   while (m_ctrl->strong_count > 0) {
-    // Reaching this points means the ref count has been successfully
-    // incremented
-    using bypass = strong_ptr<T>::bypass_ref_count;
     // Bypass the add_ref because the ref count has already been incremented
     // above.
-    return strong_ptr<T>(bypass{}, m_ctrl, m_ptr);
+    return strong_ptr<T>(m_ctrl, m_ptr);
   }
 
   // Strong count is now 0
@@ -1840,9 +1842,8 @@ private:
   strong_ptr_only_token() = default;
 
   template<class U, typename... Args>
-  friend constexpr strong_ptr<U> make_strong_ptr(
-    std::pmr::polymorphic_allocator<>,
-    Args&&...);
+  friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
+                                                 Args&&...);
 };
 
 /**
@@ -1902,7 +1903,7 @@ private:
  *
  * @tparam T The type of object to create
  * @tparam Args Types of arguments to forward to the constructor
- * @param p_alloc Allocator to use for memory allocation
+ * @param p_memory_resource memory resource used to allocate object
  * @param p_args Arguments to forward to the constructor
  * @return A strong_ptr managing the newly created object
  * @throws Any exception thrown by the object's constructor
@@ -1910,20 +1911,23 @@ private:
  */
 export template<class T, typename... Args>
 [[nodiscard]] constexpr strong_ptr<T> make_strong_ptr(
-  std::pmr::polymorphic_allocator<> p_alloc,
+  std::pmr::memory_resource* p_memory_resource,
   Args&&... p_args)
 {
   using rc_t = rc<T>;
 
   rc_t* obj = nullptr;
 
+  std::pmr::polymorphic_allocator<> allocator(p_memory_resource);
   if constexpr (std::is_constructible_v<T, strong_ptr_only_token, Args...>) {
     // Type expects token as first parameter
-    obj = p_alloc.new_object<rc_t>(
-      p_alloc, strong_ptr_only_token{}, std::forward<Args>(p_args)...);
+    obj = allocator.new_object<rc_t>(p_memory_resource,
+                                     strong_ptr_only_token{},
+                                     std::forward<Args>(p_args)...);
   } else {
     // Normal type, construct without token
-    obj = p_alloc.new_object<rc_t>(p_alloc, std::forward<Args>(p_args)...);
+    obj = allocator.new_object<rc_t>(p_memory_resource,
+                                     std::forward<Args>(p_args)...);
   }
 
   strong_ptr<T> result(&obj->m_info, &obj->m_object);
