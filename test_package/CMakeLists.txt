@@ -35,7 +35,6 @@ target_sources(${PROJECT_NAME} PUBLIC
 )
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-# target_compile_options(${PROJECT_NAME} PRIVATE -Og)
 target_link_libraries(${PROJECT_NAME} PRIVATE strong_ptr)
 
 # Always run this custom target by making it depend on ALL
