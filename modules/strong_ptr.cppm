@@ -60,7 +60,7 @@ struct ref_info
   using type_erased_destruct_function_t = std::size_t(void const*);
 
   /// Initialize to 1 since creation implies a reference
-  std::pmr::memory_resource* allocator;
+  std::pmr::memory_resource* allocator = nullptr;
   type_erased_destruct_function_t* destroy = nullptr;
   int strong_count = 0;
   int weak_count = 0;
