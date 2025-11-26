@@ -80,9 +80,14 @@ else()
         -Wextra
         -Wshadow
         -pedantic
-        -fsanitize=address
     )
-    target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
+
+    # Enable ASAN only on non-Windows platforms (Windows doesn't support it)
+    if(NOT WIN32)
+        target_compile_options(strong_ptr_unit_test PUBLIC -fsanitize=address)
+        target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
+    endif()
+
     target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
 
     message(STATUS "Executing unit tests!")
