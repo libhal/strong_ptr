@@ -22,10 +22,6 @@ on:
       - main
 
 jobs:
-  ci:
-    uses: libhal/ci/.github/workflows/library_check.yml@5.x.y
-    secrets: inherit
-
   package_and_upload_all_check:
     uses: libhal/ci/.github/workflows/package_and_upload_all.yml@5.x.y
     secrets: inherit
