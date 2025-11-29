@@ -25,4 +25,7 @@ jobs:
     uses: libhal/ci/.github/workflows/package_and_upload_all.yml@5.x.y
     with:
       version: ${{ github.ref_name }}
-    secrets: inherit
+      remote_url: https://libhal.jfrog.io/artifactory/api/conan/trunk-conan
+    secrets:
+      conan_remote_password: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN }}
+      conan_remote_user: ${{ secrets.JFROG_LIBHAL_TRUNK_ID_TOKEN_USER }}
