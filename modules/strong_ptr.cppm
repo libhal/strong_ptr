@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdint>
+#include <exception>
 module;
 
 #include <array>
@@ -34,6 +36,78 @@ class strong_ptr;
 
 template<typename T>
 class weak_ptr;
+
+/**
+ * @brief
+ *
+ * @tparam N
+ */
+template<size_t N>
+class monotonic_allocator : public std::pmr::memory_resource
+{
+public:
+  /**
+   * @brief Allocates storage with a size of at least p_bytes bytes, aligned to
+   * the specified p_alignment.
+   *
+   * @param p_bytes number of bytes to allocate
+   * @param p_alignment
+   * @return void*
+   */
+  void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
+  {
+    m_allocated_bytes += p_bytes;
+    auto const space = m_ptr - m_memory_buffer.back();
+    return std::align(p_alignment, p_bytes, m_ptr, space);
+  };
+
+  /**
+   * @brief "Deallocates" p_bytes bytes by removing p_bytes from the recorded
+   * allocated bytes
+   *
+   * @param p_ptr
+   * @param p_bytes number of bytes to record
+   * @param p_alignment
+   */
+  void do_deallocate([[maybe_unused]] void* p_ptr,
+                     std::size_t p_bytes,
+                     [[maybe_unused]] std::size_t p_alignment)
+  {
+    m_allocated_bytes -= p_bytes;
+  }
+
+  /**
+   * @brief Compares equality with another memory resource
+   *
+   * @param p_other resource to compare against *this
+   * @return true - resources are equal
+   * @return false - resources are not equal
+   */
+  bool do_is_equal(std::pmr::memory_resource const& p_other)
+  {
+    return *this == p_other;
+  }
+
+  /**
+   * @brief Destroy the monotonic allocator. The allocation and deallocation
+   * amounts must be equal, otherwise std::terminate is called.
+   *
+   */
+  ~monotonic_allocator()
+  {
+    if (m_allocated_bytes != 0) {
+      std::terminate();
+    }
+  }
+
+private:
+  std::int32_t m_allocated_bytes = 0;
+  void* m_ptr{ m_memory_buffer };
+  std::array<std::uint8_t, N> m_memory_buffer;
+};
+
+template<size_t N>
+monotonic_allocator make_monotonic_allocator();
 
 /**
  * @brief Control block for reference counting - type erased.

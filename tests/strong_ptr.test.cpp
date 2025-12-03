@@ -247,4 +247,18 @@ boost::ut::suite<"strong_ptr_only_test"> strong_ptr_only_test = []() {
     expect(that % 42 == copy_ptr->value());
   };
 };
+
+boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
+  using namespace boost::ut;
+  "test1"_test = [&] {
+    // make tests here
+    monotonic_allocator<64> allocator;
+
+    char* char_test = allocator.allocate(sizeof(char), alignof(char));
+    *char_test = 'a';
+
+    expect(that % 'a' == char_test);
+    << "Assignment failed.\n";
+  };
+};
 }  // namespace mem
