@@ -16,6 +16,7 @@ cmake_minimum_required(VERSION 3.30)
 
 # Generate compile commands for anyone using our libraries.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_COLOR_DIAGNOSTICS ON)
 
 project(strong_ptr LANGUAGES CXX)
 
@@ -65,10 +66,10 @@ else()
         tests/unit_test.cppm
         PRIVATE
         tests/main.test.cpp
-        tests/optional_ptr.test.cpp
-        tests/enable_from_this.test.cpp
         tests/strong_ptr.test.cpp
+        tests/optional_ptr.test.cpp
         tests/weak_ptr.test.cpp
+        tests/enable_from_this.test.cpp
         tests/mixins.test.cpp
     )
     target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
@@ -79,9 +80,14 @@ else()
         -Wextra
         -Wshadow
         -pedantic
-        -fsanitize=address
     )
-    target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
+
+    # Enable ASAN only on non-Windows platforms (Windows doesn't support it)
+    if(NOT WIN32)
+        target_compile_options(strong_ptr_unit_test PUBLIC -fsanitize=address)
+        target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
+    endif()
+
     target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
 
     message(STATUS "Executing unit tests!")

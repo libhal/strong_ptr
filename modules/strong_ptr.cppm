@@ -16,8 +16,11 @@
 #include <exception>
 module;
 
+#include <cstddef>
+
 #include <array>
 #include <atomic>
+#include <exception>
 #include <memory_resource>
 #include <system_error>
 #include <type_traits>
@@ -25,17 +28,17 @@ module;
 
 export module strong_ptr;
 
-export namespace mem::inline v1 {
-using usize = std::uintptr_t;
-using i32 = std::int32_t;
-using u32 = std::uint32_t;
+namespace mem::inline v1 {
 
 // Forward declarations
-template<typename T>
+export template<typename T>
 class strong_ptr;
 
-template<typename T>
+export template<typename T>
 class weak_ptr;
+
+export template<typename T>
+class optional_ptr;
 
 /**
  * @brief
@@ -128,21 +131,31 @@ struct ref_info
    * If a nullptr is passed to the destroy function, it returns the object size
    * but does not destroy the object.
    */
-  using destroy_fn_t = usize(void const*);
+  using type_erased_destruct_function_t = std::size_t(void const*);
 
   /// Initialize to 1 since creation implies a reference
-  std::pmr::polymorphic_allocator<> allocator;
-  destroy_fn_t* destroy;
-  std::atomic<i32> strong_count = 1;
-  std::atomic<i32> weak_count = 0;
+  std::pmr::memory_resource* allocator = nullptr;
+  type_erased_destruct_function_t* destroy = nullptr;
+  int strong_count = 0;
+  int weak_count = 0;
+
+  // Add explicit constructor to avoid aggregate initialization issues
+  constexpr ref_info(std::pmr::memory_resource* p_alloc,
+                     type_erased_destruct_function_t* p_destroy)
+    : allocator(p_alloc)
+    , destroy(p_destroy)
+    , strong_count(0)
+    , weak_count(0)
+  {
+  }
 
   /**
    * @brief Add strong reference to control block
    *
    */
-  void add_ref()
+  constexpr void add_ref()
   {
-    strong_count.fetch_add(1, std::memory_order_relaxed);
+    strong_count++;
   }
 
   /**
@@ -152,24 +165,28 @@ struct ref_info
    * destroyed. If there are no remaining weak references, the memory
    * will also be deallocated.
    */
-  void release()
+  constexpr void release()
   {
-    if (strong_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+    // Note: fetch_sub returns the previous value, if it was 1 and we subtracted
+    // 1, then the final value is 0. We check below 1 just in case another
+    // thread performs a fetch_sub and gets a 0 or negative value.
+    strong_count--;
+    if (strong_count == 0) {
       // No more strong references, destroy the object but keep control block
       // if there are weak references
 
       // Call the destroy function which will:
       // 1. Call the destructor of the object
       // 2. Return the size of the rc for deallocation when needed
-      usize const object_size = destroy(this);
+      auto const object_size = destroy(this);
 
       // If there are no weak references, deallocate memory
-      if (weak_count.load(std::memory_order_acquire) == 0) {
+      if (weak_count == 0) {
         // Save allocator for deallocating
         auto alloc = allocator;
 
         // Deallocate memory
-        alloc.deallocate_bytes(this, object_size);
+        alloc->deallocate(this, object_size);
       }
     }
   }
@@ -178,9 +195,9 @@ struct ref_info
    * @brief Add weak reference to control block
    *
    */
-  void add_weak()
+  constexpr void add_weak()
   {
-    weak_count.fetch_add(1, std::memory_order_relaxed);
+    weak_count--;
   }
 
   /**
@@ -191,19 +208,21 @@ struct ref_info
    *
    * @param p_info Pointer to the control block
    */
-  void release_weak()
+  constexpr void release_weak()
   {
-    if (weak_count.fetch_sub(1, std::memory_order_acq_rel) == 0) {
+    weak_count--;
+    if (weak_count == 0) {
       // No more weak references, check if we can deallocate
-      if (strong_count.load(std::memory_order_acquire) == 0) {
-        // No strong references either, get the size from the destroy function
+      if (strong_count == 0) {
+        // No strong references remain
+        // Get the size from the destroy function
         auto const object_size = destroy(nullptr);
 
         // Save allocator for deallocating
         auto alloc = allocator;
 
         // Deallocate memory
-        alloc.deallocate_bytes(this, object_size);
+        alloc->deallocate(this, object_size);
       }
     }
   }
@@ -224,14 +243,14 @@ struct rc
 
   // Constructor that forwards arguments to the object
   template<typename... Args>
-  rc(std::pmr::polymorphic_allocator<> p_alloc, Args&&... args)
-    : m_info{ .allocator = p_alloc, .destroy = &destroy_function }
+  constexpr rc(std::pmr::memory_resource* p_alloc, Args&&... args)
+    : m_info(p_alloc, &destruct_this_type_and_return_size)
     , m_object(std::forward<Args>(args)...)
   {
   }
 
-  // Static function to destroy an instance and return its size
-  static usize destroy_function(void const* p_object)
+  constexpr static std::size_t destruct_this_type_and_return_size(
+    void const* p_object)
   {
     if (p_object != nullptr) {
       // Cast back into the original rc<T> type and ...
@@ -265,65 +284,27 @@ struct is_array_like<std::array<T, N>> : std::true_type
 
 // Helper variable template
 template<typename T>
-inline constexpr bool is_array_like_v = is_array_like<T>::value;
+constexpr bool is_array_like_v = is_array_like<T>::value;
 
 // Concept for array-like types
 template<typename T>
 concept array_like = is_array_like_v<T>;
 
 // Concept for non-array-like types
-// TODO(#6): Improve thrown error types
 template<typename T>
-concept non_array_like = !array_like<T>;
+concept non_array_like = not array_like<T>;
 
 /**
  * @ingroup Error
  * @brief Base exception class for all hal related exceptions
  *
  */
-class exception
+export class exception : public std::exception
 {
 public:
-  constexpr exception(std::errc p_error_code, void const* p_instance)
-    : m_instance(p_instance)
-    , m_error_code(p_error_code)
+  constexpr exception(std::errc p_error_code)
+    : m_error_code(p_error_code)
   {
-    static_cast<void>(m_reserved0);
-    static_cast<void>(m_reserved1);
-    static_cast<void>(m_reserved2);
-    static_cast<void>(m_reserved3);
-  }
-
-  /**
-   * @brief address of the object that threw an exception
-   *
-   * If the exception was thrown by a function, this will be a nullptr. The
-   * purpose of this field is to allow exception handlers additional insight
-   * about what may have gone wrong with the system.
-   *
-   * Use cases:
-   *
-   *  1. Logging:
-   *      a. Log the instance object address raw
-   *      b. Use the instance address to determine which driver failed and
-   *         craft a more accurate log message.
-   *  2. Recovery:
-   *      a. Compare the instance address against drivers which are known to
-   *         throw recoverable errors. When the driver or object is found,
-   *         perform operations on that driver to bring the system back into a
-   *         normal state.
-   *
-   * NOTE: about using this for recovery. The instance address should not be
-   * used directly but only with objects that are still accessible by the error
-   * handler. This address should be used for lookup. DO NOT COST away the const
-   * or C-cast this into an object for use. If the object you mean to manipulate
-   * is not at least within the scope catch handler, then the lifetime of that
-   * object cannot be guaranteed and is considered the strongest form of UB.
-   *
-   */
-  [[nodiscard]] void const* instance() const
-  {
-    return m_instance;
   }
 
   /**
@@ -348,30 +329,29 @@ public:
    *
    * 2. Recovery
    *
-   * This can technically be used for recovery, but it is HIGHLY RECOMMENDED to
-   * use the derived classes in their own catch blocks to recover from a
-   * specific error rather than using the base class and extracting its error
-   * code.
+   * This can be used for recovery, but it is HIGHLY RECOMMENDED to use the
+   * derived classes in their own catch blocks to recover from a specific error
+   * rather than using the base class and extracting its error code.
    *
    * @return std::errc - error code represented by the exception
    */
-  [[nodiscard]] std::errc error_code() const
+  [[nodiscard]] constexpr std::errc error_code() const
   {
     return m_error_code;
   }
 
+  constexpr char const* what() const noexcept override
+  {
+    return "mem::exception";
+  }
+
+  ~exception() override
+  {
+    // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
+  }
+
 private:
-  void const* m_instance = nullptr;
   std::errc m_error_code{};
-  /// Reserved memory for future use without breaking the ABI
-  /// To keep the layout the same with `exception_abi_origin_v0`, these MUST
-  /// stay u32 into the future. Their names can be changed, and their
-  /// contents can be any format, but they must stay u32 for the
-  /// static_assert check.
-  u32 m_reserved0{};
-  u32 m_reserved1{};
-  u32 m_reserved2{};
-  u32 m_reserved3{};
 };
 
 /**
@@ -380,36 +360,31 @@ private:
  * or resource.
  *
  */
-struct out_of_range : public exception
+export struct out_of_range : public exception
 {
   struct info
   {
-    usize m_index;
-    usize m_capacity;
+    std::size_t m_index;
+    std::size_t m_capacity;
   };
 
-  out_of_range(void const* p_instance, info p_info)
-    : exception(std::errc::invalid_argument, p_instance)
-    , m_info(p_info)
+  constexpr out_of_range(info p_info)
+    : exception(std::errc::invalid_argument)
+    , info(p_info)
   {
   }
 
-  info m_info;
-};
-
-/**
- * @ingroup Error
- * @brief Raised when a weak_ptr is accessed for an object that has been
- * destroyed.
- *
- */
-struct bad_weak_ptr : public exception
-{
-public:
-  bad_weak_ptr(void* p_weak_ptr_instance)
-    : mem::exception(std::errc::bad_address, p_weak_ptr_instance)
+  constexpr char const* what() const noexcept override
   {
+    return "mem::out_of_range";
   }
+
+  ~out_of_range() override
+  {
+    // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
+  }
+
+  info info;
 };
 
 /**
@@ -418,14 +393,33 @@ public:
  * optional_ptr.
  *
  */
-struct bad_optional_ptr_access : public exception
+export struct nullptr_access : public exception
 {
-
-  bad_optional_ptr_access(void const* p_instance)
-    : exception(std::errc::invalid_argument, p_instance)
+  constexpr nullptr_access()
+    : exception(std::errc::invalid_argument)
   {
   }
+
+  constexpr char const* what() const noexcept override
+  {
+    return "mem::nullptr_access";
+  }
+
+  ~nullptr_access() override
+  {
+    // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
+  }
 };
+
+/**
+ * @brief API tag used to create a strong_ptr which points to static memory
+ *
+ * As the name implies this is unsafe and is up to the developer to ensure that
+ * the object passed to strong_ptr actually has static storage duration.
+ *
+ */
+export struct unsafe_assume_static_tag
+{};
 
 /**
  * @brief A non-nullable strong reference counted pointer
@@ -445,16 +439,16 @@ struct bad_optional_ptr_access : public exception
  *
  * ```C++
  * // Create a strong_ptr to an object
- * auto ptr = mem::make_strong_ptr<my_i2c_driver>(allocator, arg1, arg2);
+ * auto i2c = mem::make_strong_ptr<my_i2c_driver>(allocator, arg1, arg2);
  *
  * // Use the object using dereference (*) operator
- * (*ptr).configure({ .clock_rate = 250_kHz });
+ * (*i2c).configure({ .clock_rate = 250_kHz });
  *
  * // OR use the object using arrow (->) operator
- * ptr->configure({ .clock_rate = 250_kHz });
+ * i2c->configure({ .clock_rate = 250_kHz });
  *
  * // Share ownership with another driver or object
- * auto my_imu = mem::make_strong_ptr<my_driver>(allocator, ptr, 0x13);
+ * auto sensor = mem::make_strong_ptr<my_sensor>(allocator, i2c, 0x13);
  * ```
  *
  * @tparam T The type of the managed object
@@ -472,17 +466,44 @@ public:
   strong_ptr(std::nullptr_t) = delete;
 
   /**
+   * @brief Create a strong_ptr that points to points to an object with static
+   * storage duration.
+   *
+   * This API MUST only be used with objects with static storage duration.
+   * Without that precondition met, it is UB to create such a strong_ptr.
+   *
+   * There is no way in C++23 and below to determine if an lvalue passed has
+   * static storage duration. With C++26 and `std::has_static_storage_duration`
+   * we can determine this at compile time and provide a compile time error if
+   * the passed lvalue is not an object with static storage duration. This
+   * constructor will be deprecated once the library migrates to C++26.
+   *
+   * Since the original object was statically allocated, there is no need for a
+   * ref counted control block and thus no allocation occurs. `use_count()` will
+   * return 0 meaning that the object is statically allocated.
+   *
+   * @param p_object - a statically allocated object to
+   * @return strong_ptr<T> - A strong_ptr pointing to lvalue which should have
+   * static storage duration.
+   */
+  constexpr strong_ptr(unsafe_assume_static_tag, T& p_object)
+    : m_ctrl(nullptr)
+    , m_ptr(&p_object)
+  {
+  }
+
+  /**
    * @brief Copy constructor
    *
    * Creates a new strong reference to the same object.
    *
    * @param p_other The strong_ptr to copy from
    */
-  strong_ptr(strong_ptr const& p_other) noexcept
+  constexpr strong_ptr(strong_ptr const& p_other) noexcept
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -495,12 +516,12 @@ public:
    * @param p_other The strong_ptr to copy from
    */
   template<typename U>
-  strong_ptr(strong_ptr<U> const& p_other) noexcept
+  constexpr strong_ptr(strong_ptr<U> const& p_other) noexcept
     requires(std::is_convertible_v<U*, T*>)
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -519,11 +540,11 @@ public:
    *
    * @param p_other The strong_ptr to "move" from (actually copied for safety)
    */
-  strong_ptr(strong_ptr&& p_other) noexcept
+  constexpr strong_ptr(strong_ptr&& p_other) noexcept
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -543,13 +564,13 @@ public:
    * @param p_other The strong_ptr to "move" from (actually copied for safety)
    * @return Reference to *this
    */
-  strong_ptr& operator=(strong_ptr&& p_other) noexcept
+  constexpr strong_ptr& operator=(strong_ptr&& p_other) noexcept
   {
     if (this != &p_other) {
       release();
       m_ctrl = p_other.m_ctrl;
       m_ptr = p_other.m_ptr;
-      m_ctrl->add_ref();
+      add_ref();
     }
     return *this;
   }
@@ -567,14 +588,14 @@ public:
    * @tparam U - some type for the strong_ptr.
    */
   template<typename U>
-  strong_ptr(strong_ptr<U> const&, void const*) noexcept
+  constexpr strong_ptr(strong_ptr<U> const&, void const*) noexcept
   {
     // NOTE: The conditional used here is to prevent the compiler from
     // jumping-the-gun and emitting the static assert error during template
     // instantiation of the class. With this conditional, the error only appears
     // when this constructor is used.
     static_assert(
-      std::is_same_v<U, void> && !std::is_same_v<U, void>,
+      std::is_same_v<U, void> && not std::is_same_v<U, void>,
       "Aliasing constructor only works with pointers-to-members "
       "and does not work with arbitrary pointers like std::shared_ptr allows.");
   }
@@ -610,16 +631,16 @@ public:
    * @param p_member_ptr Pointer-to-member identifying which member to reference
    */
   template<typename U, non_array_like M>
-  strong_ptr(strong_ptr<U> const& p_other,
-             // clang-format off
+  constexpr strong_ptr(strong_ptr<U> const& p_other,
+                       // clang-format off
              M U::* p_member_ptr
-             // clang-format on
-             ) noexcept
+                       // clang-format on
+                       ) noexcept
 
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(&((*p_other).*p_member_ptr))
   {
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   /**
@@ -654,18 +675,18 @@ public:
    * @throws mem::out_of_range if index is out of bounds
    */
   template<typename U, typename E, std::size_t N>
-  strong_ptr(strong_ptr<U> const& p_other,
-             // clang-format off
+  constexpr strong_ptr(strong_ptr<U> const& p_other,
+                       // clang-format off
              std::array<E, N> U::* p_array_ptr,
-             // clang-format on
-             std::size_t p_index)
+                       // clang-format on
+                       std::size_t p_index)
   {
     static_assert(std::is_convertible_v<E*, T*>,
                   "Array element type must be convertible to T");
     throw_if_out_of_bounds(N, p_index);
     m_ctrl = p_other.m_ctrl;
     m_ptr = &((*p_other).*p_array_ptr)[p_index];
-    m_ctrl->add_ref();
+    add_ref();
   }
 
   // NOLINTBEGIN(modernize-avoid-c-arrays)
@@ -701,16 +722,16 @@ public:
    * @throws mem::out_of_range if index is out of bounds
    */
   template<typename U, typename E, std::size_t N>
-  strong_ptr(strong_ptr<U> const& p_other,
-             E (U::*p_array_ptr)[N],
-             std::size_t p_index)
+  constexpr strong_ptr(strong_ptr<U> const& p_other,
+                       E (U::*p_array_ptr)[N],
+                       std::size_t p_index)
   {
     static_assert(std::is_convertible_v<E*, T*>,
                   "Array element type must be convertible to T");
     throw_if_out_of_bounds(N, p_index);
     m_ctrl = p_other.m_ctrl;
     m_ptr = &((*p_other).*p_array_ptr)[p_index];
-    m_ctrl->add_ref();
+    add_ref();
   }
   // NOLINTEND(modernize-avoid-c-arrays)
 
@@ -733,13 +754,13 @@ public:
    * @param p_other The strong_ptr to copy from
    * @return Reference to *this
    */
-  strong_ptr& operator=(strong_ptr const& p_other) noexcept
+  constexpr strong_ptr& operator=(strong_ptr const& p_other) noexcept
   {
     if (this != &p_other) {
       release();
       m_ctrl = p_other.m_ctrl;
       m_ptr = p_other.m_ptr;
-      m_ctrl->add_ref();
+      add_ref();
     }
     return *this;
   }
@@ -755,13 +776,13 @@ public:
    * @return Reference to *this
    */
   template<typename U>
-  strong_ptr& operator=(strong_ptr<U> const& p_other) noexcept
+  constexpr strong_ptr& operator=(strong_ptr<U> const& p_other) noexcept
     requires(std::is_convertible_v<U*, T*>)
   {
     release();
     m_ctrl = p_other.m_ctrl;
     m_ptr = p_other.m_ptr;
-    m_ctrl->add_ref();
+    add_ref();
     return *this;
   }
 
@@ -770,7 +791,7 @@ public:
    *
    * @param p_other The strong_ptr to swap with
    */
-  void swap(strong_ptr& p_other) noexcept
+  constexpr void swap(strong_ptr& p_other) noexcept
   {
     std::swap(m_ctrl, p_other.m_ctrl);
     std::swap(m_ptr, p_other.m_ptr);
@@ -791,7 +812,7 @@ public:
    *
    * @return Reference to the managed object
    */
-  [[nodiscard]] T& operator*() const& noexcept
+  [[nodiscard]] constexpr T& operator*() const& noexcept
   {
     return *m_ptr;
   }
@@ -801,7 +822,7 @@ public:
    *
    * @return Pointer to the managed object
    */
-  [[nodiscard]] T* operator->() const& noexcept
+  [[nodiscard]] constexpr T* operator->() const& noexcept
   {
     return m_ptr;
   }
@@ -813,15 +834,30 @@ public:
    *
    * @return The number of strong references to the managed object
    */
-  [[nodiscard]] auto use_count() const noexcept
+  [[nodiscard]] constexpr auto use_count() const noexcept
   {
-    return m_ctrl ? m_ctrl->strong_count.load(std::memory_order_relaxed) : 0;
+    return m_ctrl ? m_ctrl->strong_count : 0;
+  }
+
+  /**
+   * @brief Returns if the object this is pointing to is statically allocated or
+   * not.
+   *
+   * @return true - object is assumed to have static storage duration.
+   * @return false - object has dynamic storage duration.
+   */
+  constexpr bool is_dynamic()
+  {
+    return m_ctrl != nullptr;
   }
 
 private:
+  template<class U>
+  friend class enable_strong_from_this;
+
   template<class U, typename... Args>
-  friend strong_ptr<U> make_strong_ptr(std::pmr::polymorphic_allocator<>,
-                                       Args&&...);
+  friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
+                                                 Args&&...);
 
   template<typename U>
   friend class strong_ptr;
@@ -831,26 +867,33 @@ private:
 
   template<typename U>
   friend class optional_ptr;
-  // TODO: make replacement error structs
-  inline void throw_if_out_of_bounds(usize p_size, usize p_index)
+
+  constexpr void throw_if_out_of_bounds(std::size_t p_size, std::size_t p_index)
   {
     if (p_index >= p_size) {
-      throw(
-        mem::out_of_range(this, { .m_index = p_index, .m_capacity = p_size }));
+      throw mem::out_of_range({ .m_index = p_index, .m_capacity = p_size });
+    }
+  }
+
+  constexpr void add_ref()
+  {
+    if (is_dynamic()) {
+      m_ctrl->add_ref();
     }
   }
 
   // Internal constructor with control block and pointer - used by make() and
   // aliasing
-  strong_ptr(ref_info* p_ctrl, T* p_ptr) noexcept
+  constexpr strong_ptr(ref_info* p_ctrl, T* p_ptr) noexcept
     : m_ctrl(p_ctrl)
     , m_ptr(p_ptr)
   {
+    add_ref();
   }
 
-  void release()
+  constexpr void release()
   {
-    if (m_ctrl) {
+    if (is_dynamic()) {
       m_ctrl->release();
     }
   }
@@ -886,7 +929,7 @@ private:
  *
  * @tparam T The derived class type
  */
-template<typename T>
+export template<class T>
 class enable_strong_from_this
 {
 public:
@@ -894,31 +937,22 @@ public:
    * @brief Get a strong_ptr to this object
    *
    * @return strong_ptr<T> pointing to this object
-   * @throws mem::bad_weak_ptr if this object is not managed by a strong_ptr
    */
-  [[nodiscard]] strong_ptr<T> strong_from_this()
+  [[nodiscard]] constexpr strong_ptr<T> strong_from_this()
   {
-    auto locked = m_weak_this.lock();
-    if (!locked) {
-      throw(mem::bad_weak_ptr(&m_weak_this));
-    }
-    return locked.value();
+    return strong_ptr<T>(&m_ref_counted_self->m_info,
+                         &m_ref_counted_self->m_object);
   }
 
   /**
    * @brief Get a strong_ptr to this object (const version)
    *
    * @return strong_ptr<T const> pointing to this object
-   * @throws mem::bad_weak_ptr if this object is not managed by a strong_ptr
    */
-  [[nodiscard]] strong_ptr<T const> strong_from_this() const
+  [[nodiscard]] constexpr strong_ptr<T const> strong_from_this() const
   {
-    auto locked = m_weak_this.lock();
-    if (!locked) {
-      throw(mem::bad_weak_ptr(&m_weak_this));
-    }
-    // Cast the strong_ptr<T> to strong_ptr<T const>
-    return strong_ptr<T const>(locked.value());
+    return strong_ptr<T>(&m_ref_counted_self->m_info,
+                         &m_ref_counted_self->m_object);
   }
 
   /**
@@ -926,9 +960,9 @@ public:
    *
    * @return weak_ptr<T> pointing to this object
    */
-  [[nodiscard]] weak_ptr<T> weak_from_this() noexcept
+  [[nodiscard]] constexpr weak_ptr<T> weak_from_this() noexcept
   {
-    return m_weak_this;
+    return strong_from_this();
   }
 
   /**
@@ -936,9 +970,9 @@ public:
    *
    * @return weak_ptr<T const> pointing to this object
    */
-  [[nodiscard]] weak_ptr<T const> weak_from_this() const noexcept
+  [[nodiscard]] constexpr weak_ptr<T const> weak_from_this() const noexcept
   {
-    return weak_ptr<T const>(m_weak_this);
+    return strong_from_this();
   }
 
 protected:
@@ -963,7 +997,8 @@ protected:
    * Note: The weak_ptr is not assigned - each object keeps its own weak
    * reference
    */
-  enable_strong_from_this& operator=(enable_strong_from_this const&) noexcept
+  constexpr enable_strong_from_this& operator=(
+    enable_strong_from_this const&) noexcept
   {
     // Intentionally don't assign m_weak_this
     return *this;
@@ -976,20 +1011,20 @@ protected:
 
 private:
   template<class U, typename... Args>
-  friend strong_ptr<U> make_strong_ptr(std::pmr::polymorphic_allocator<>,
-                                       Args&&...);
+  friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
+                                                 Args&&...);
 
   /**
    * @brief Initialize the weak reference (called by make_strong_ptr)
    *
    * @param p_self The strong_ptr that manages this object
    */
-  void init_weak_this(strong_ptr<T> const& p_self) noexcept
+  constexpr void init_weak_this(rc<T>* p_self) noexcept
   {
-    m_weak_this = p_self;
+    m_ref_counted_self = p_self;
   }
 
-  mutable weak_ptr<T> m_weak_this;
+  mutable rc<T>* m_ref_counted_self;
 };
 
 template<typename T>
@@ -1015,7 +1050,7 @@ class optional_ptr;
  * // Later, try to get a strong reference
  * if (auto locked = weak.lock()) {
  *   // Use the object via locked
- *   locked->doSomething();
+ *   locked->do_something();
  * } else {
  *   // Object has been destroyed
  * }
@@ -1045,7 +1080,7 @@ public:
    *
    * @param p_strong The strong_ptr to create a weak reference to
    */
-  weak_ptr(strong_ptr<T> const& p_strong) noexcept
+  constexpr weak_ptr(strong_ptr<T> const& p_strong) noexcept
     : m_ctrl(p_strong.m_ctrl)
     , m_ptr(p_strong.m_ptr)
   {
@@ -1059,7 +1094,7 @@ public:
    *
    * @param p_other The weak_ptr to copy from
    */
-  weak_ptr(weak_ptr const& p_other) noexcept
+  constexpr weak_ptr(weak_ptr const& p_other) noexcept
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
@@ -1073,7 +1108,7 @@ public:
    *
    * @param p_other The weak_ptr to move from
    */
-  weak_ptr(weak_ptr&& p_other) noexcept
+  constexpr weak_ptr(weak_ptr&& p_other) noexcept
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(p_other.m_ptr)
   {
@@ -1090,7 +1125,7 @@ public:
    * @param p_other The weak_ptr to copy from
    */
   template<typename U>
-  weak_ptr(weak_ptr<U> const& p_other) noexcept
+  constexpr weak_ptr(weak_ptr<U> const& p_other) noexcept
     requires(std::is_convertible_v<U*, T*>)
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(static_cast<T*>(p_other.m_ptr))
@@ -1106,10 +1141,11 @@ public:
    * Moves a weak_ptr of U to a weak_ptr T where U is convertible to T.
    *
    * @tparam U A type convertible to T
-   * @param p_other The weak_ptr to move from
+   * @param p_other The weak_ptr to move from. Moved from weak_ptr's are
+   * considered expired.
    */
   template<typename U>
-  weak_ptr(weak_ptr<U>&& p_other) noexcept
+  constexpr weak_ptr(weak_ptr<U>&& p_other) noexcept
     requires(std::is_convertible_v<U*, T*>)
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(static_cast<T*>(p_other.m_ptr))
@@ -1127,7 +1163,7 @@ public:
    * @param p_other The strong_ptr to create a weak reference to
    */
   template<typename U>
-  weak_ptr(strong_ptr<U> const& p_other) noexcept
+  constexpr weak_ptr(strong_ptr<U> const& p_other) noexcept
     requires(std::is_convertible_v<U*, T*>)
     : m_ctrl(p_other.m_ctrl)
     , m_ptr(static_cast<T*>(p_other.m_ptr))
@@ -1156,7 +1192,7 @@ public:
    * @param p_other The weak_ptr to copy from
    * @return Reference to *this
    */
-  weak_ptr& operator=(weak_ptr const& p_other) noexcept
+  constexpr weak_ptr& operator=(weak_ptr const& p_other) noexcept
   {
     weak_ptr(p_other).swap(*this);
     return *this;
@@ -1168,7 +1204,7 @@ public:
    * @param p_other The weak_ptr to move from
    * @return Reference to *this
    */
-  weak_ptr& operator=(weak_ptr&& p_other) noexcept
+  constexpr weak_ptr& operator=(weak_ptr&& p_other) noexcept
   {
     weak_ptr(std::move(p_other)).swap(*this);
     return *this;
@@ -1180,7 +1216,7 @@ public:
    * @param p_strong The strong_ptr to create a weak reference to
    * @return Reference to *this
    */
-  weak_ptr& operator=(strong_ptr<T> const& p_strong) noexcept
+  constexpr weak_ptr& operator=(strong_ptr<T> const& p_strong) noexcept
   {
     weak_ptr(p_strong).swap(*this);
     return *this;
@@ -1191,7 +1227,7 @@ public:
    *
    * @param p_other The weak_ptr to swap with
    */
-  void swap(weak_ptr& p_other) noexcept
+  constexpr void swap(weak_ptr& p_other) noexcept
   {
     std::swap(m_ctrl, p_other.m_ctrl);
     std::swap(m_ptr, p_other.m_ptr);
@@ -1202,9 +1238,19 @@ public:
    *
    * @return true if the object has been destroyed, false otherwise
    */
-  [[nodiscard]] bool expired() const noexcept
+  [[nodiscard]] constexpr bool expired() const noexcept
   {
-    return !m_ctrl || m_ctrl->strong_count.load(std::memory_order_relaxed) == 0;
+    if (m_ptr == nullptr) {
+      return true;
+    }
+
+    if (m_ctrl != nullptr) {
+      return m_ctrl->strong_count == 0;
+    }
+
+    // If m_ptr != nullptr && m_ctrl == nullptr (static object), return false,
+    // because that object will always exist.
+    return false;
   }
 
   /**
@@ -1215,7 +1261,7 @@ public:
    *
    * @return An optional_ptr that is either empty or contains a strong_ptr
    */
-  [[nodiscard]] optional_ptr<T> lock() const noexcept;
+  [[nodiscard]] constexpr optional_ptr<T> lock() const noexcept;
 
   /**
    * @brief Get the current strong reference count
@@ -1224,9 +1270,9 @@ public:
    *
    * @return The number of strong references to the managed object
    */
-  [[nodiscard]] auto use_count() const noexcept
+  [[nodiscard]] constexpr auto use_count() const noexcept
   {
-    return m_ctrl ? m_ctrl->strong_count.load(std::memory_order_relaxed) : 0;
+    return m_ctrl ? m_ctrl->strong_count : 0;
   }
 
 private:
@@ -1259,7 +1305,7 @@ private:
  * // Check if the optional_ptr is engaged
  * if (opt2) {
  *   // Use the contained object
- *   opt2->doSomething();
+ *   opt2->do_something();
  * }
  *
  * // Reset to disengage
@@ -1431,12 +1477,12 @@ public:
    * @brief Access the contained value, throw if not engaged
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr strong_ptr<T>& value()
   {
-    if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+    if (not is_engaged()) {
+      throw mem::nullptr_access();
     }
     return m_value;
   }
@@ -1445,12 +1491,12 @@ public:
    * @brief Access the contained value, throw if not engaged (const version)
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr strong_ptr<T> const& value() const
   {
-    if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+    if (not is_engaged()) {
+      throw mem::nullptr_access();
     }
     return m_value;
   }
@@ -1462,7 +1508,7 @@ public:
    * when the optional_ptr is engaged.
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr operator strong_ptr<T>()
   {
@@ -1473,7 +1519,7 @@ public:
    * @brief Implicitly convert to a strong_ptr<T> (const version)
    *
    * @return A copy of the contained strong_ptr
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   [[nodiscard]] constexpr operator strong_ptr<T>() const
   {
@@ -1488,14 +1534,14 @@ public:
    *
    * @tparam U The target type (must be convertible from T)
    * @return A copy of the contained strong_ptr, converted to the target type
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>()
-    requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
+    requires(std::is_convertible_v<T*, U*> && not std::is_same_v<T, U>)
   {
-    if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+    if (not is_engaged()) {
+      throw mem::nullptr_access();
     }
     // strong_ptr handles the polymorphic conversion
     return strong_ptr<U>(m_value);
@@ -1507,14 +1553,14 @@ public:
    *
    * @tparam U The target type (must be convertible from T)
    * @return A copy of the contained strong_ptr, converted to the target type
-   * @throws mem::bad_optional_ptr_access if *this is disengaged
+   * @throws mem::nullptr_access if *this is disengaged
    */
   template<typename U>
   [[nodiscard]] constexpr operator strong_ptr<U>() const
-    requires(std::is_convertible_v<T*, U*> && !std::is_same_v<T, U>)
+    requires(std::is_convertible_v<T*, U*> && not std::is_same_v<T, U>)
   {
-    if (!is_engaged()) {
-      throw(mem::bad_optional_ptr_access(this));
+    if (not is_engaged()) {
+      throw mem::nullptr_access();
     }
     // strong_ptr handles the polymorphic conversion
     return strong_ptr<U>(m_value);
@@ -1596,6 +1642,21 @@ public:
   }
 
   /**
+   * @brief Get the current reference count
+   *
+   * This is primarily for testing purposes. To determine if an optional_ptr
+   * points to a statically allocated object, this API must return 0 and
+   * `is_engaged()` must return true.
+   *
+   * @return The number of strong references to the managed object. Returns 0 if
+   * this pointer is nullptr.
+   */
+  [[nodiscard]] constexpr auto use_count() const noexcept
+  {
+    return is_engaged() ? m_value.m_ctrl->strong_count : 0;
+  }
+
+  /**
    * @brief Swap the contents of this optional_ptr with another
    *
    * @param other The optional_ptr to swap with
@@ -1604,10 +1665,10 @@ public:
   {
     if (is_engaged() && other.is_engaged()) {
       std::swap(m_value, other.m_value);
-    } else if (is_engaged() && !other.is_engaged()) {
+    } else if (is_engaged() && not other.is_engaged()) {
       new (&other.m_value) strong_ptr<T>(std::move(m_value));
       reset();
-    } else if (!is_engaged() && other.is_engaged()) {
+    } else if (not is_engaged() && other.is_engaged()) {
       new (&m_value) strong_ptr<T>(std::move(other.m_value));
       other.reset();
     }
@@ -1652,24 +1713,17 @@ private:
  * @return An optional_ptr that is either empty or contains a strong_ptr
  */
 template<typename T>
-[[nodiscard]] inline optional_ptr<T> weak_ptr<T>::lock() const noexcept
+[[nodiscard]] constexpr optional_ptr<T> weak_ptr<T>::lock() const noexcept
 {
   if (expired()) {
     return nullptr;
   }
 
   // Try to increment the strong count
-  auto current_count = m_ctrl->strong_count.load(std::memory_order_relaxed);
-  while (current_count > 0) {
-    // TODO(kammce): Consider if this is dangerous
-    if (m_ctrl->strong_count.compare_exchange_weak(current_count,
-                                                   current_count + 1,
-                                                   std::memory_order_acq_rel,
-                                                   std::memory_order_relaxed)) {
-      // Successfully incremented
-      auto obj = strong_ptr<T>(m_ctrl, m_ptr);
-      return obj;
-    }
+  while (m_ctrl->strong_count > 0) {
+    // Bypass the add_ref because the ref count has already been incremented
+    // above.
+    return strong_ptr<T>(m_ctrl, m_ptr);
   }
 
   // Strong count is now 0
@@ -1683,8 +1737,8 @@ template<typename T>
  * @param p_lhs First strong_ptr to swap
  * @param p_rhs Second strong_ptr to swap
  */
-template<typename T>
-void swap(strong_ptr<T>& p_lhs, strong_ptr<T>& p_rhs) noexcept
+export template<typename T>
+constexpr void swap(strong_ptr<T>& p_lhs, strong_ptr<T>& p_rhs) noexcept
 {
   p_lhs.swap(p_rhs);
 }
@@ -1696,7 +1750,7 @@ void swap(strong_ptr<T>& p_lhs, strong_ptr<T>& p_rhs) noexcept
  * @param p_lhs First weak_ptr to swap
  * @param p_rhs Second weak_ptr to swap
  */
-template<typename T>
+export template<typename T>
 void swap(weak_ptr<T>& p_lhs, weak_ptr<T>& p_rhs) noexcept
 {
   p_lhs.swap(p_rhs);
@@ -1713,8 +1767,9 @@ void swap(weak_ptr<T>& p_lhs, weak_ptr<T>& p_rhs) noexcept
  * @param p_rhs Second strong_ptr to compare
  * @return true if both point to the same object, false otherwise
  */
-template<typename T, typename U>
-bool operator==(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
+export template<typename T, typename U>
+[[nodiscard]] constexpr bool operator==(strong_ptr<T> const& p_lhs,
+                                        strong_ptr<U> const& p_rhs) noexcept
 {
   return p_lhs.operator->() == p_rhs.operator->();
 }
@@ -1730,10 +1785,11 @@ bool operator==(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
  * @param p_rhs Second strong_ptr to compare
  * @return true if they point to different objects, false otherwise
  */
-template<typename T, typename U>
-bool operator!=(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
+export template<typename T, typename U>
+[[nodiscard]] constexpr bool operator!=(strong_ptr<T> const& p_lhs,
+                                        strong_ptr<U> const& p_rhs) noexcept
 {
-  return !(p_lhs == p_rhs);
+  return not(p_lhs == p_rhs);
 }
 /**
  * @brief Equality operator for optional_ptr
@@ -1748,12 +1804,12 @@ bool operator!=(strong_ptr<T> const& p_lhs, strong_ptr<U> const& p_rhs) noexcept
  * @param p_rhs Second optional_ptr to compare
  * @return true if both are equal according to the rules above
  */
-template<typename T, typename U>
-[[nodiscard]] bool operator==(optional_ptr<T> const& p_lhs,
-                              optional_ptr<U> const& p_rhs) noexcept
+export template<typename T, typename U>
+[[nodiscard]] constexpr bool operator==(optional_ptr<T> const& p_lhs,
+                                        optional_ptr<U> const& p_rhs) noexcept
 {
   // If both are disengaged, they're equal
-  if (!p_lhs.has_value() && !p_rhs.has_value()) {
+  if (not p_lhs.has_value() && not p_rhs.has_value()) {
     return true;
   }
 
@@ -1777,11 +1833,11 @@ template<typename T, typename U>
  * @param p_rhs Second optional_ptr to compare
  * @return true if they are not equal
  */
-template<typename T, typename U>
-[[nodiscard]] bool operator!=(optional_ptr<T> const& p_lhs,
-                              optional_ptr<U> const& p_rhs) noexcept
+export template<typename T, typename U>
+[[nodiscard]] constexpr bool operator!=(optional_ptr<T> const& p_lhs,
+                                        optional_ptr<U> const& p_rhs) noexcept
 {
-  return !(p_lhs == p_rhs);
+  return not(p_lhs == p_rhs);
 }
 
 /**
@@ -1793,11 +1849,11 @@ template<typename T, typename U>
  * @param p_lhs The optional_ptr to compare
  * @return true if the optional_ptr is disengaged
  */
-template<typename T>
-[[nodiscard]] bool operator==(optional_ptr<T> const& p_lhs,
-                              std::nullptr_t) noexcept
+export template<typename T>
+[[nodiscard]] constexpr bool operator==(optional_ptr<T> const& p_lhs,
+                                        std::nullptr_t) noexcept
 {
-  return !p_lhs.has_value();
+  return not p_lhs.has_value();
 }
 
 /**
@@ -1809,11 +1865,11 @@ template<typename T>
  * @param p_rhs The optional_ptr to compare
  * @return true if the optional_ptr is disengaged
  */
-template<typename T>
-[[nodiscard]] bool operator==(std::nullptr_t,
-                              optional_ptr<T> const& p_rhs) noexcept
+export template<typename T>
+[[nodiscard]] constexpr bool operator==(std::nullptr_t,
+                                        optional_ptr<T> const& p_rhs) noexcept
 {
-  return !p_rhs.has_value();
+  return not p_rhs.has_value();
 }
 
 /**
@@ -1825,9 +1881,9 @@ template<typename T>
  * @param p_lhs The optional_ptr to compare
  * @return true if the optional_ptr is engaged
  */
-template<typename T>
-[[nodiscard]] bool operator!=(optional_ptr<T> const& p_lhs,
-                              std::nullptr_t) noexcept
+export template<typename T>
+[[nodiscard]] constexpr bool operator!=(optional_ptr<T> const& p_lhs,
+                                        std::nullptr_t) noexcept
 {
   return p_lhs.has_value();
 }
@@ -1841,9 +1897,9 @@ template<typename T>
  * @param p_rhs The optional_ptr to compare
  * @return true if the optional_ptr is engaged
  */
-template<typename T>
-[[nodiscard]] bool operator!=(std::nullptr_t,
-                              optional_ptr<T> const& p_rhs) noexcept
+export template<typename T>
+[[nodiscard]] constexpr bool operator!=(std::nullptr_t,
+                                        optional_ptr<T> const& p_rhs) noexcept
 {
   return p_rhs.has_value();
 }
@@ -1854,14 +1910,14 @@ template<typename T>
  * Make the first parameter of your class's constructor(s) in order to limit
  * that constructor to only be used via `make_strong_ptr`.
  */
-class strong_ptr_only_token
+export class strong_ptr_only_token
 {
 private:
   strong_ptr_only_token() = default;
 
   template<class U, typename... Args>
-  friend strong_ptr<U> make_strong_ptr(std::pmr::polymorphic_allocator<>,
-                                       Args&&...);
+  friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
+                                                 Args&&...);
 };
 
 /**
@@ -1921,35 +1977,38 @@ private:
  *
  * @tparam T The type of object to create
  * @tparam Args Types of arguments to forward to the constructor
- * @param p_alloc Allocator to use for memory allocation
+ * @param p_memory_resource memory resource used to allocate object
  * @param p_args Arguments to forward to the constructor
  * @return A strong_ptr managing the newly created object
  * @throws Any exception thrown by the object's constructor
  * @throws std::bad_alloc if memory allocation fails
  */
-template<class T, typename... Args>
-[[nodiscard]] inline strong_ptr<T> make_strong_ptr(
-  std::pmr::polymorphic_allocator<> p_alloc,
+export template<class T, typename... Args>
+[[nodiscard]] constexpr strong_ptr<T> make_strong_ptr(
+  std::pmr::memory_resource* p_memory_resource,
   Args&&... p_args)
 {
   using rc_t = rc<T>;
 
   rc_t* obj = nullptr;
 
+  std::pmr::polymorphic_allocator<> allocator(p_memory_resource);
   if constexpr (std::is_constructible_v<T, strong_ptr_only_token, Args...>) {
     // Type expects token as first parameter
-    obj = p_alloc.new_object<rc_t>(
-      p_alloc, strong_ptr_only_token{}, std::forward<Args>(p_args)...);
+    obj = allocator.new_object<rc_t>(p_memory_resource,
+                                     strong_ptr_only_token{},
+                                     std::forward<Args>(p_args)...);
   } else {
     // Normal type, construct without token
-    obj = p_alloc.new_object<rc_t>(p_alloc, std::forward<Args>(p_args)...);
+    obj = allocator.new_object<rc_t>(p_memory_resource,
+                                     std::forward<Args>(p_args)...);
   }
 
   strong_ptr<T> result(&obj->m_info, &obj->m_object);
 
   // Initialize enable_strong_from_this if the type inherits from it
   if constexpr (std::is_base_of_v<enable_strong_from_this<T>, T>) {
-    result->init_weak_this(result);
+    result->init_weak_this(obj);
   }
 
   return result;

@@ -14,13 +14,14 @@
 
 module;
 
+#include <array>
 #include <memory_resource>
 
 export module strong_ptr_unit_test;
 
-import strong_ptr;
+export import strong_ptr;
 
-export namespace mem {
+export namespace mem::inline v1 {
 // Base class for testing polymorphism
 class base_class
 {
@@ -54,25 +55,25 @@ public:
   explicit test_class(int p_value = 0)
     : m_value(p_value)
   {
-    ++s_instance_count;
+    ++instance_count;
   }
 
   ~test_class()
   {
-    --s_instance_count;
+    --instance_count;
   }
 
   test_class(test_class const& p_other)
   {
     m_value = p_other.m_value;
-    ++s_instance_count;
+    ++instance_count;
   }
 
   test_class& operator=(test_class const& p_other)
   {
     if (this != &p_other) {
       m_value = p_other.m_value;
-      ++s_instance_count;
+      ++instance_count;
     }
     return *this;
   }
@@ -101,7 +102,7 @@ public:
   }
 
   // Static counter for number of instances
-  inline static int s_instance_count = 0;
+  inline static int instance_count = 0;
 
 private:
   int m_value;
@@ -151,7 +152,7 @@ private:
 class restricted_class
 {
 public:
-  static auto create(std::pmr::polymorphic_allocator<> alloc, int p_value)
+  static auto create(std::pmr::memory_resource* alloc, int p_value)
   {
     return make_strong_ptr<restricted_class>(alloc, p_value);
   }
@@ -180,7 +181,7 @@ private:
 class fully_managed_class : public enable_strong_from_this<fully_managed_class>
 {
 public:
-  static auto create(std::pmr::polymorphic_allocator<> alloc, int p_value)
+  static auto create(std::pmr::memory_resource* alloc, int p_value)
   {
     return make_strong_ptr<fully_managed_class>(alloc, p_value);
   }
@@ -211,5 +212,5 @@ private:
 std::array<std::byte, 4096 * 16> buffer{};
 std::pmr::monotonic_buffer_resource test_resource{ buffer.data(),
                                                    buffer.size() };
-std::pmr::polymorphic_allocator<> test_allocator{ &test_resource };
-}  // namespace mem
+std::pmr::memory_resource* test_allocator{ &test_resource };
+}  // namespace mem::inline v1

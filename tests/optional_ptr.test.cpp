@@ -51,7 +51,7 @@ boost::ut::suite<"optional_ptr_conversion_test"> optional_ptr_conversion_test =
     "conversion_with_empty_optional"_test = [&] {
       optional_ptr<test_class> empty;
 
-      expect(throws<mem::bad_optional_ptr_access>([&] {
+      expect(throws<mem::nullptr_access>([&] {
         strong_ptr<test_class> converted = empty;  // Should throw
       }));
     };
@@ -170,10 +170,10 @@ boost::ut::suite<"optional_ptr_test"> optional_ptr_test =
 
       // Test exception on accessing null optional
       optional_ptr<test_class> empty;
-      expect(throws<mem::bad_optional_ptr_access>(
+      expect(throws<mem::nullptr_access>(
         [&] { [[maybe_unused]] auto _ = empty->value(); }))
         << "Accessing null optional with arrow operator should throw\n";
-      expect(throws<mem::bad_optional_ptr_access>(
+      expect(throws<mem::nullptr_access>(
         [&] { [[maybe_unused]] auto _ = (*empty).value(); }))
         << "Accessing null optional with dereference operator should throw\n";
     };
@@ -218,27 +218,6 @@ boost::ut::suite<"optional_ptr_test"> optional_ptr_test =
         << "First derived should lose shared ownership\n";
       expect(that % 2 == derived2.use_count())
         << "Second derived should gain shared ownership\n";
-    };
-
-    "weak_ptr_lock"_test = [&] {
-      weak_ptr<test_class> weak;
-      {
-        // Test creating an optional_ptr through weak_ptr::lock()
-        auto strong = make_strong_ptr<test_class>(test_allocator, 42);
-        weak = strong;
-
-        auto locked = weak.lock();
-        expect(that % true == bool(locked))
-          << "Locked weak_ptr should be valid\n";
-        expect(that % 42 == locked->value()) << "Value should match original\n";
-        expect(that % 2 == strong.use_count())
-          << "Should share ownership with original\n";
-      }
-
-      // Lock should now fail
-      auto locked2 = weak.lock();
-      expect(that % false == bool(locked2))
-        << "Locked expired weak_ptr should be empty\n";
     };
 
     "equality"_test =

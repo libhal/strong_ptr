@@ -12,8 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cassert>
+
+#include <memory_resource>
+
 import strong_ptr;
 
 int main()
 {
+  auto ptr = mem::make_strong_ptr<int>(std::pmr::new_delete_resource(), 42);
+  assert(*ptr == 42);
+  assert(ptr.use_count() == 1);
+  {
+    mem::optional_ptr<int> ptr2 = ptr;
+    assert(*ptr2 == 42);
+    *ptr2 = 55;
+    assert(*ptr2 == 55);
+    assert(ptr.use_count() == 2);
+    assert(ptr2.use_count() == 2);
+  }
+
+  assert(ptr.use_count() == 1);
+  assert(*ptr == 55);
+  return 0;
 }

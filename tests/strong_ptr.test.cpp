@@ -30,7 +30,7 @@ boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
     auto ptr = mem::make_strong_ptr<test_class>(test_allocator, 42);
 
     expect(that % 42 == ptr->value());
-    expect(that % 1 == test_class::s_instance_count)
+    expect(that % 1 == test_class::instance_count)
       << "Should have created one instance";
     expect(that % 1 == ptr.use_count())
       << "Should have exactly one reference\n";
@@ -197,16 +197,16 @@ boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
   };
 
   "destruction"_test = [&] {
-    expect(that % 0 == test_class::s_instance_count)
+    expect(that % 0 == test_class::instance_count)
       << "Should start with no instances\n";
 
     {
       auto ptr = make_strong_ptr<test_class>(test_allocator, 42);
-      expect(that % 1 == test_class::s_instance_count)
+      expect(that % 1 == test_class::instance_count)
         << "Should have one instance\n";
     }
 
-    expect(that % 0 == test_class::s_instance_count)
+    expect(that % 0 == test_class::instance_count)
       << "Instance should be destroyed\n";
   };
 };
@@ -245,6 +245,86 @@ boost::ut::suite<"strong_ptr_only_test"> strong_ptr_only_test = []() {
     // NOLINTEND(performance-unnecessary-copy-initialization)
     expect(that % 2 == obj.use_count()) << "Should share ownership";
     expect(that % 42 == copy_ptr->value());
+  };
+
+  "statically_allocate_strong_ptr"_test = [&] {
+    // Create a static object
+    static int static_obj = 42;
+
+    // Create strong_ptr to static object using unsafe_assume_static_tag
+    strong_ptr<int> ptr(mem::unsafe_assume_static_tag{}, static_obj);
+
+    // Verify the pointer works correctly
+    expect(that % 42 == *ptr);
+
+    // use_count should be 0 for statically allocated objects
+    expect(that % 0 == ptr.use_count())
+      << "Static strong_ptr should have use_count of 0";
+
+    // Modify through the pointer
+    *ptr = 100;
+    expect(that % 100 == *ptr);
+    expect(that % 100 == static_obj)
+      << "Static int should be modified through strong_ptr";
+
+    // Test copying a static strong_ptr
+    auto ptr_copy = ptr;
+    expect(that % 0 == ptr_copy.use_count())
+      << "Copy of static strong_ptr should also have use_count of 0";
+    expect(that % 100 == *ptr_copy);
+
+    // Test copying a static strong_ptr
+    mem::optional_ptr<int> opt_ptr = ptr;
+    *opt_ptr = 17;
+    expect(that % 0 == ptr_copy.use_count())
+      << "Copy of static optional_ptr should also have use_count of 0";
+    expect(that % 17 == *ptr_copy);
+    expect(that % 17 == static_obj)
+      << "Static int should be modified through optional_ptr";
+  };
+
+  "static_strong_ptr_no_destructor_call"_test = [&] {
+    // Use a separate class to avoid affecting test_class::s_instance_count
+    static bool destructor_called = false;
+    struct static_tracked_class
+    {
+      int value;
+      explicit static_tracked_class(int v)
+        : value(v)
+      {
+      }
+      ~static_tracked_class()
+      {
+        destructor_called = true;
+      }
+    };
+
+    static static_tracked_class static_obj(999);
+    destructor_called = false;  // Reset flag
+
+    {
+      // Create strong_ptr to static object using unsafe_assume_static_tag
+      strong_ptr<static_tracked_class> ptr(mem::unsafe_assume_static_tag{},
+                                           static_obj);
+
+      expect(that % 999 == ptr->value);
+      expect(that % 0 == ptr.use_count())
+        << "Static strong_ptr should have use_count of 0";
+
+      // Copy the pointer to ensure copies also don't call destructor
+      auto ptr_copy = ptr;
+      expect(that % 0 == ptr_copy.use_count());
+    }
+
+    // After scope exit, destructor should NOT have been called
+    expect(not destructor_called)
+      << "Static object's destructor should not be called when strong_ptr "
+         "goes out of scope";
+
+    // Verify object is still valid
+    expect(that % 999 == static_obj.value)
+      << "Static object should still be accessible after strong_ptr "
+         "destruction";
   };
 };
 

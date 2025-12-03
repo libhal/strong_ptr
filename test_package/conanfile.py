@@ -18,7 +18,6 @@ from conan import ConanFile
 from conan.tools.build import cross_building
 from conan.tools.cmake import CMake, cmake_layout, CMakeToolchain, CMakeDeps
 from pathlib import Path
-import os
 
 
 class TestPackageConan(ConanFile):
@@ -26,8 +25,7 @@ class TestPackageConan(ConanFile):
     generators = "VirtualRunEnv"
 
     def build_requirements(self):
-        self.tool_requires("cmake/4.1.1")
-        self.tool_requires("ninja/1.13.1")
+        self.tool_requires("cmake-modules-toolchain/1.0.2")
 
     def requirements(self):
         self.requires(self.tested_reference_str)
@@ -35,31 +33,8 @@ class TestPackageConan(ConanFile):
     def layout(self):
         cmake_layout(self)
 
-    def inject_linker_flags(flags: str,  tc: CMakeToolchain) -> str:
-        link_flags = tc.variables.get("CMAKE_EXE_LINKER_FLAGS", "")
-        link_flags = link_flags + f" {flags}"
-        link_flags = link_flags.strip()
-        tc.variables["CMAKE_EXE_LINKER_FLAGS"] = link_flags
-        return tc.variables["CMAKE_EXE_LINKER_FLAGS"]
-
-    def _add_arm_specs_if_applicable(self, tc: CMakeToolchain):
-        should_add_flags = (self.settings.os == "baremetal"
-                            and self.settings.compiler == "gcc"
-                            and str(self.settings.arch).startswith("cortex-m"))
-        if not should_add_flags:
-            return
-
-        LIB_C_FLAGS = "--specs=nano.specs --specs=nosys.specs"
-        self.output.info(f"Baremetal ARM GCC Profile detected!")
-        self.output.info(f'💉 injecting flags >> "{LIB_C_FLAGS}"')
-        result = self.inject_linker_flags(LIB_C_FLAGS, tc)
-        self.output.info(f'tc.var["CMAKE_EXE_LINKER_FLAGS"] = "{result}"')
-
     def generate(self):
         tc = CMakeToolchain(self)
-        tc.generator = "Ninja"
-        tc.cache_variables["CMAKE_CXX_SCAN_FOR_MODULES"] = True
-        self._add_arm_specs_if_applicable(tc)
         tc.generate()
 
         deps = CMakeDeps(self)
