@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+module;
+
 #include <cstdint>
 #include <exception>
-module;
 
 #include <cstddef>
 
 #include <array>
 #include <atomic>
 #include <exception>
+#include <memory>
 #include <memory_resource>
 #include <system_error>
 #include <type_traits>
@@ -40,15 +42,20 @@ class weak_ptr;
 export template<typename T>
 class optional_ptr;
 
-/**
- * @brief
- *
- * @tparam N
- */
-template<size_t N>
-class monotonic_allocator : public std::pmr::memory_resource
+class monotonic_allocator_base : public std::pmr::memory_resource
 {
 public:
+  /**
+   * @brief Destroy the monotonic allocator. The allocation and deallocation
+   * amounts must be equal, otherwise std::terminate is called.
+   *
+   */
+  ~monotonic_allocator_base()
+  {
+    if (m_allocated_bytes != 0) {
+      std::terminate();
+    }
+  }
   /**
    * @brief Allocates storage with a size of at least p_bytes bytes, aligned to
    * the specified p_alignment.
@@ -59,9 +66,14 @@ public:
    */
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
   {
-    m_allocated_bytes += p_bytes;
-    auto const space = m_ptr - m_memory_buffer.back();
-    return std::align(p_alignment, p_bytes, m_ptr, space);
+    void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
+    if (result) {
+      m_allocated_bytes += p_bytes;
+      m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
+      // allign does not adjust space, have to do it manually
+      m_space -= p_bytes;
+    }
+    return result;
   };
 
   /**
@@ -86,31 +98,33 @@ public:
    * @return true - resources are equal
    * @return false - resources are not equal
    */
-  bool do_is_equal(std::pmr::memory_resource const& p_other)
+  bool do_is_equal(std::pmr::memory_resource const& p_other) const noexcept
   {
     return *this == p_other;
   }
 
-  /**
-   * @brief Destroy the monotonic allocator. The allocation and deallocation
-   * amounts must be equal, otherwise std::terminate is called.
-   *
-   */
-  ~monotonic_allocator()
+protected:
+  size_t m_space = 0;
+  void* m_ptr = nullptr;
+  std::int32_t m_allocated_bytes = 0;
+};
+
+export template<size_t MemorySize>
+class monotonic_allocator : public monotonic_allocator_base
+{
+public:
+  monotonic_allocator()
   {
-    if (m_allocated_bytes != 0) {
-      std::terminate();
-    }
+    m_ptr = &m_buffer;
+    m_space = MemorySize;
   }
 
 private:
-  std::int32_t m_allocated_bytes = 0;
-  void* m_ptr{ m_memory_buffer };
-  std::array<std::uint8_t, N> m_memory_buffer;
+  std::array<std::uint8_t, MemorySize> m_buffer = {};
 };
 
 template<size_t N>
-monotonic_allocator make_monotonic_allocator();
+monotonic_allocator<N> make_monotonic_allocator();
 
 /**
  * @brief Control block for reference counting - type erased.
@@ -302,7 +316,7 @@ concept non_array_like = not array_like<T>;
 export class exception : public std::exception
 {
 public:
-  constexpr exception(std::errc p_error_code)
+  exception(std::errc p_error_code)
     : m_error_code(p_error_code)
   {
   }
@@ -368,7 +382,7 @@ export struct out_of_range : public exception
     std::size_t m_capacity;
   };
 
-  constexpr out_of_range(info p_info)
+  out_of_range(info p_info)
     : exception(std::errc::invalid_argument)
     , info(p_info)
   {
@@ -395,7 +409,7 @@ export struct out_of_range : public exception
  */
 export struct nullptr_access : public exception
 {
-  constexpr nullptr_access()
+  nullptr_access()
     : exception(std::errc::invalid_argument)
   {
   }

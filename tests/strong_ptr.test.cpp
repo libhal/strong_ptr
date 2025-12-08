@@ -330,15 +330,54 @@ boost::ut::suite<"strong_ptr_only_test"> strong_ptr_only_test = []() {
 
 boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
   using namespace boost::ut;
-  "test1"_test = [&] {
-    // make tests here
-    monotonic_allocator<64> allocator;
+  "assignment_test"_test = [&] {
+    auto allocator = monotonic_allocator<32>();
 
-    char* char_test = allocator.allocate(sizeof(char), alignof(char));
-    *char_test = 'a';
+    auto ptr1 = allocator.allocate(sizeof(char), alignof(char));
+    auto char_ptr = static_cast<char*>(ptr1);
+    *char_ptr = 'a';
 
-    expect(that % 'a' == char_test);
-    << "Assignment failed.\n";
+    auto ptr2 =
+      allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto int_ptr = static_cast<int*>(ptr2);
+    *int_ptr = 1;
+
+    expect(that % 1 == *int_ptr) << "Int assignment failed.\n";
+    expect(that % 'a' == *char_ptr) << "char assignment failed.\n";
+    allocator.deallocate(ptr2, sizeof(std::uint32_t), alignof(std::uint32_t));
+    allocator.deallocate(ptr1, sizeof(char), alignof(char));
+  };
+
+  "termination_test"_test = [&] {
+    expect(aborts([] {
+      auto allocator = monotonic_allocator<32>();
+      [[maybe_unused]] auto ptr =
+        allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    }))
+      << "std::terminate not called.\n";
+  };
+
+  "max_buffer_test"_test = [&] {
+    auto allocator = monotonic_allocator<8>();
+
+    auto ptr1 =
+      allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto int_ptr1 = static_cast<int*>(ptr1);
+    *int_ptr1 = 1;
+
+    auto ptr2 =
+      allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto int_ptr2 = static_cast<int*>(ptr2);
+    *int_ptr2 = 2;
+
+    auto ptr3 =
+      allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
+    expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
+    expect(that % nullptr == ptr3)
+      << "Allocated memory out of bounds of buffer./n";
+    allocator.deallocate(ptr1, sizeof(std::uint32_t), alignof(std::uint32_t));
+    allocator.deallocate(ptr2, sizeof(std::uint32_t), alignof(std::uint32_t));
   };
 };
 }  // namespace mem
