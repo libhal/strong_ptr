@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 4.0)
 
 # Generate compile commands for anyone using our libraries.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -57,6 +57,8 @@ install(
 if(CMAKE_CROSSCOMPILING)
     message(STATUS "Cross compiling, skipping unit test execution")
 else()
+    message(STATUS "Building unit tests!")
+
     find_package(ut REQUIRED)
     add_executable(strong_ptr_unit_test)
     target_sources(strong_ptr_unit_test PUBLIC
@@ -90,7 +92,6 @@ else()
 
     target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
 
-    message(STATUS "Executing unit tests!")
     add_custom_target(run_tests ALL
       DEPENDS strong_ptr_unit_test
       COMMAND strong_ptr_unit_test

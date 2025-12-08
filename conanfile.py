@@ -85,8 +85,8 @@ class strong_ptr_conan(ConanFile):
         self._validate_compiler_version()
 
     def build_requirements(self):
-        # Provides CMake, Ninja, & toolchain scripts for enabling modules
-        self.tool_requires("cmake-modules-toolchain/1.0.2")
+        self.tool_requires("cmake/[^4.0.0]")
+        self.tool_requires("ninja/[^1.3.0]")
         self.test_requires("boost-ext-ut/2.3.1",
                            options={'disable_module': False})
 
@@ -98,6 +98,7 @@ class strong_ptr_conan(ConanFile):
 
     def generate(self):
         tc = CMakeToolchain(self)
+        tc.generator = "Ninja"
         tc.generate()
 
         deps = CMakeDeps(self)
