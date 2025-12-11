@@ -42,12 +42,20 @@ class weak_ptr;
 export template<typename T>
 class optional_ptr;
 
+/**
+ * @brief Creates allocators that do not need deallocation support. This
+ * allocator will never deallocate memory, but instead removes bytes from the
+ * recorded allocated bytes count and checks that the count is zero when the
+ * destructor is called. Memory is stored internally such that the lifetime of
+ * the memory and the allocator are bound to each other.
+ *
+ */
 class monotonic_allocator_base : public std::pmr::memory_resource
 {
 public:
   /**
-   * @brief Destroy the monotonic allocator. The allocation and deallocation
-   * amounts must be equal, otherwise std::terminate is called.
+   * @brief Destroy the monotonic allocator. The allocated bytes count must
+   * equal zero, otherwise std::terminate is called.
    *
    */
   ~monotonic_allocator_base()
@@ -58,11 +66,13 @@ public:
   }
   /**
    * @brief Allocates storage with a size of at least p_bytes bytes, aligned to
-   * the specified p_alignment.
+   * the specified p_alignment. Adjusts recorded space available and adds
+   * p_bytes to the allocated bytes count if memory is successfuly allocated.
    *
    * @param p_bytes number of bytes to allocate
-   * @param p_alignment
-   * @return void*
+   * @param p_alignment  the desired alignment
+   * @return void* pointer to allocated space or nullptr if no space is
+   * available
    */
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
   {
@@ -70,19 +80,18 @@ public:
     if (result) {
       m_allocated_bytes += p_bytes;
       m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
-      // allign does not adjust space, have to do it manually
       m_space -= p_bytes;
     }
     return result;
   };
 
   /**
-   * @brief "Deallocates" p_bytes bytes by removing p_bytes from the recorded
-   * allocated bytes
+   * @brief "Deallocates" bytes by removing p_bytes from the recorded
+   * allocated bytes to be checked when object destructed
    *
-   * @param p_ptr
+   * @param p_ptr pointer to resource previously allocated
    * @param p_bytes number of bytes to record
-   * @param p_alignment
+   * @param p_alignment the desired alignment
    */
   void do_deallocate([[maybe_unused]] void* p_ptr,
                      std::size_t p_bytes,
@@ -109,10 +118,22 @@ protected:
   std::int32_t m_allocated_bytes = 0;
 };
 
+/**
+ * @brief Creates allocators that do not need deallocation support. This
+ * allocator will never deallocate memory, but instead removes bytes from the
+ * recorded allocated bytes count and checks that the count is zero when the
+ * destructor is called. Memory is stored internally such that the lifetime of
+ * the memory and the allocator are bound to each other.
+ *
+ */
 export template<size_t MemorySize>
 class monotonic_allocator : public monotonic_allocator_base
 {
 public:
+  /**
+   * @brief Construct a new monotonic allocator object
+   *
+   */
   monotonic_allocator()
   {
     m_ptr = &m_buffer;
@@ -122,9 +143,6 @@ public:
 private:
   std::array<std::uint8_t, MemorySize> m_buffer = {};
 };
-
-template<size_t N>
-monotonic_allocator<N> make_monotonic_allocator();
 
 /**
  * @brief Control block for reference counting - type erased.
