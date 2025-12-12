@@ -15,8 +15,6 @@
 module;
 
 #include <cstdint>
-#include <exception>
-
 #include <cstddef>
 
 #include <array>
@@ -76,6 +74,10 @@ public:
    */
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
   {
+    if (m_space < p_bytes)
+    {
+      return nullptr;
+    }
     void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
     if (result) {
       m_allocated_bytes += p_bytes;
@@ -92,11 +94,10 @@ public:
    *
    * @param p_ptr pointer to resource previously allocated
    * @param p_bytes number of bytes to record
-   * @param p_alignment the desired alignment
    */
-  void do_deallocate([[maybe_unused]] void* p_ptr,
+  void do_deallocate(void*,
                      std::size_t p_bytes,
-                     [[maybe_unused]] std::size_t p_alignment)
+                     std::size_t)
   {
     m_allocated_bytes -= p_bytes;
   }
