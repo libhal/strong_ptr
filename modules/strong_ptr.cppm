@@ -81,8 +81,9 @@ public:
       m_allocated_bytes += p_bytes;
       m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
       m_space -= p_bytes;
+      return result;
     }
-    return result;
+    return nullptr;
   };
 
   /**
