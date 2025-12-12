@@ -15,10 +15,13 @@
 module;
 
 #include <cstddef>
+#include <cstdint>
+
 
 #include <array>
 #include <atomic>
 #include <exception>
+#include <memory>
 #include <memory_resource>
 #include <system_error>
 #include <type_traits>
@@ -37,6 +40,106 @@ class weak_ptr;
 
 export template<typename T>
 class optional_ptr;
+
+/**
+ * @brief Creates allocators that do not need deallocation support. This
+ * allocator will never deallocate memory, but instead removes bytes from the
+ * recorded allocated bytes count and checks that the count is zero when the
+ * destructor is called. Memory is stored internally such that the lifetime of
+ * the memory and the allocator are bound to each other.
+ *
+ */
+class monotonic_allocator_base : public std::pmr::memory_resource
+{
+public:
+  /**
+   * @brief Destroy the monotonic allocator. The allocated bytes count must
+   * equal zero, otherwise std::terminate is called.
+   *
+   */
+  ~monotonic_allocator_base()
+  {
+    if (m_allocated_bytes != 0) {
+      std::terminate();
+    }
+  }
+  /**
+   * @brief Allocates storage with a size of at least p_bytes bytes, aligned to
+   * the specified p_alignment. Adjusts recorded space available and adds
+   * p_bytes to the allocated bytes count if memory is successfuly allocated.
+   *
+   * @param p_bytes number of bytes to allocate
+   * @param p_alignment  the desired alignment
+   * @return void* pointer to allocated space or nullptr if no space is
+   * available
+   */
+  void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
+  {
+    void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
+    if (result) {
+      m_allocated_bytes += p_bytes;
+      m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
+      m_space -= p_bytes;
+      return result;
+    }
+    return nullptr;
+  };
+
+  /**
+   * @brief "Deallocates" bytes by removing p_bytes from the recorded
+   * allocated bytes to be checked when object destructed
+   *
+   * @param p_ptr pointer to resource previously allocated
+   * @param p_bytes number of bytes to record
+   */
+  void do_deallocate(void*, std::size_t p_bytes, std::size_t)
+  {
+    m_allocated_bytes -= p_bytes;
+  }
+
+  /**
+   * @brief Compares equality with another memory resource
+   *
+   * @param p_other resource to compare against *this
+   * @return true - resources are equal
+   * @return false - resources are not equal
+   */
+  bool do_is_equal(std::pmr::memory_resource const& p_other) const noexcept
+  {
+    return *this == p_other;
+  }
+
+protected:
+  size_t m_space = 0;
+  void* m_ptr = nullptr;
+  std::int32_t m_allocated_bytes = 0;
+};
+
+/**
+ * @brief Creates allocators that do not need deallocation support. This
+ * allocator will never deallocate memory, but instead removes bytes from the
+ * recorded allocated bytes count and checks that the count is zero when the
+ * destructor is called. Memory is stored internally such that the lifetime of
+ * the memory and the allocator are bound to each other.
+ *
+ */
+export template<size_t MemorySize>
+class monotonic_allocator : public monotonic_allocator_base
+{
+public:
+  /**
+   * @brief Construct a new monotonic allocator object
+   *
+   */
+  monotonic_allocator()
+  {
+    m_ptr = &m_buffer;
+    m_space = MemorySize;
+  }
+
+private:
+  std::array<std::uint8_t, MemorySize> m_buffer = {};
+};
 
 /**
  * @brief Control block for reference counting - type erased.
@@ -228,7 +331,7 @@ concept non_array_like = not array_like<T>;
 export class exception : public std::exception
 {
 public:
-  constexpr exception(std::errc p_error_code)
+  exception(std::errc p_error_code)
     : m_error_code(p_error_code)
   {
   }
@@ -294,7 +397,7 @@ export struct out_of_range : public exception
     std::size_t m_capacity;
   };
 
-  constexpr out_of_range(info p_info)
+  out_of_range(info p_info)
     : exception(std::errc::invalid_argument)
     , info(p_info)
   {
@@ -321,7 +424,7 @@ export struct out_of_range : public exception
  */
 export struct nullptr_access : public exception
 {
-  constexpr nullptr_access()
+  nullptr_access()
     : exception(std::errc::invalid_argument)
   {
   }
