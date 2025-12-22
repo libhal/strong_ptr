@@ -17,9 +17,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 
-
 #include <array>
-#include <atomic>
 #include <exception>
 #include <memory>
 #include <memory_resource>
@@ -163,15 +161,15 @@ struct ref_info
   using type_erased_destruct_function_t = std::size_t(void const*);
 
   /// Initialize to 1 since creation implies a reference
-  std::pmr::memory_resource* allocator = nullptr;
+  std::pmr::memory_resource* allocator;
   type_erased_destruct_function_t* destroy = nullptr;
   int strong_count = 0;
   int weak_count = 0;
 
   // Add explicit constructor to avoid aggregate initialization issues
-  constexpr ref_info(std::pmr::memory_resource* p_alloc,
+  constexpr ref_info(std::pmr::memory_resource* p_allocator,
                      type_erased_destruct_function_t* p_destroy)
-    : allocator(p_alloc)
+    : allocator(p_allocator)
     , destroy(p_destroy)
     , strong_count(0)
     , weak_count(0)
@@ -284,11 +282,14 @@ struct rc
     if (p_object != nullptr) {
       // Cast back into the original rc<T> type and ...
       auto const* obj = static_cast<rc<T> const*>(p_object);
-      // Destruct T
+      // Destruct T.
       obj->m_object.~T();
-      // Destructor ref_info:
-      //    needed if we use strong_ptr<std::pmr::memory_resource>
-      obj->m_info.~ref_info();
+      // Destructor ref_info if its not trivially destructible. In general, this
+      // should never be the case, but if we do modify ref_info to have a
+      // non-trivial destructor, this will automatically manage that.
+      if constexpr (not std::is_trivially_destructible_v<ref_info>) {
+        obj->m_info.~ref_info();
+      }
     }
     // Return size for future deallocation
     return sizeof(rc<T>);
@@ -878,6 +879,21 @@ public:
   constexpr bool is_dynamic()
   {
     return m_ctrl != nullptr;
+  }
+
+  /**
+   * @brief Get the allocator used to allocate this object
+   *
+   * @return constexpr std::pmr::memory_resource* - the allocator used to
+   * allocate this object. Returns `nullptr` if the object was statically
+   * allocated.
+   */
+  constexpr std::pmr::memory_resource* get_allocator() const noexcept
+  {
+    if (m_ctrl == nullptr) {
+      return nullptr;
+    }
+    return m_ctrl->allocator;
   }
 
 private:
@@ -1953,11 +1969,16 @@ private:
  * @brief Factory function to create a strong_ptr with automatic construction
  * detection
  *
- * This is the primary way to create a new strong_ptr. It automatically detects
- * whether the target type requires token-based construction (for classes that
- * should only be managed by strong_ptr) or supports normal construction.
+ * This is the primary way to create a new strong_ptr.
+ *
+ * To create a strong_ptr, you must provide a `std::pmr::memory_resource`.
+ * That resource must outlive all strong_ptrs created by it. To uphold the
+ * guarantees of strong_ptr, the `std::pmr::memory_resource` MUST terminate the
+ * application if it is destroyed before all of its allocated memory has been
+ * freed. This requirement prevents use-after-free errors.
  *
  * The function performs the following operations:
+ *
  * 1. Allocates memory for both the object and its control block together
  * 2. Detects at compile time if the type expects a strong_ptr_only_token
  * 3. Constructs the object with appropriate parameters
@@ -2006,7 +2027,9 @@ private:
  *
  * @tparam T The type of object to create
  * @tparam Args Types of arguments to forward to the constructor
- * @param p_memory_resource memory resource used to allocate object
+ * @param p_memory_resource the memory resource used to allocate memory for the
+ * strong_ptr. The memory resource must call `std::terminate` if it is destroyed
+ * without all of its memory being freed.
  * @param p_args Arguments to forward to the constructor
  * @return A strong_ptr managing the newly created object
  * @throws Any exception thrown by the object's constructor
