@@ -70,6 +70,8 @@ public:
    * @param p_alignment  the desired alignment
    * @return void* pointer to allocated space or nullptr if no space is
    * available
+   * @throws std::bad_alloc if storage of the requested size and alignment
+   * cannot be obtained
    */
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
   {
@@ -80,7 +82,7 @@ public:
       m_space -= p_bytes;
       return result;
     }
-    return nullptr;
+    throw std::bad_alloc();
   };
 
   /**
