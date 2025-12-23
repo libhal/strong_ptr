@@ -34,6 +34,16 @@ target_sources(strong_ptr PUBLIC
     FILES modules/strong_ptr.cppm
 )
 
+target_compile_options(strong_ptr PRIVATE
+    -g
+    -Werror
+    -Wno-unused-command-line-argument
+    -Wall
+    -Wextra
+    -Wshadow
+    -fexceptions
+    -fno-rtti)
+
 install(
     TARGETS strong_ptr
     EXPORT strong_ptr_targets
@@ -78,10 +88,13 @@ else()
     target_compile_options(strong_ptr_unit_test PUBLIC
         -g
         -Werror
+        -Wno-unused-command-line-argument
         -Wall
         -Wextra
         -Wshadow
         -pedantic
+        -fexceptions
+        -fno-rtti
     )
 
     # Enable ASAN only on non-Windows platforms (Windows doesn't support it)
