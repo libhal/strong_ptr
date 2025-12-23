@@ -284,14 +284,7 @@ struct rc
     if (p_object != nullptr) {
       // Cast back into the original rc<T> type and ...
       auto const* obj = static_cast<rc<T> const*>(p_object);
-      // Destruct T.
-      obj->m_object.~T();
-      // Destructor ref_info if its not trivially destructible. In general, this
-      // should never be the case, but if we do modify ref_info to have a
-      // non-trivial destructor, this will automatically manage that.
-      if constexpr (not std::is_trivially_destructible_v<ref_info>) {
-        obj->m_info.~ref_info();
-      }
+      obj->~rc<T>();
     }
     // Return size for future deallocation
     return sizeof(rc<T>);
