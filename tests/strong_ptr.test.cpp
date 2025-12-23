@@ -475,10 +475,7 @@ boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
         allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
     }))
       << "Exception not thrown when bad alloc happens.\n";
-    // TODO(#34): fix nullptr check on linux
-    // expect(that % nullptr == ptr3)
-    //   << "Allocated memory out of bounds of buffer " <<
-    //   reinterpret_cast<std::intptr_t>(ptr3);
+
     allocator.deallocate(ptr1, sizeof(std::uint32_t));
     allocator.deallocate(ptr2, sizeof(std::uint32_t));
   };
