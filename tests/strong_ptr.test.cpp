@@ -470,7 +470,7 @@ boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
     expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
     expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
 
-    expect(throws([&] {
+    expect(throws<std::bad_alloc>([&] {
       [[maybe_unused]] auto ptr3 =
         allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
     }))
