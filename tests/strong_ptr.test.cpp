@@ -446,9 +446,8 @@ boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
     allocator.deallocate(ptr1, sizeof(char));
   };
 
-// check if compiling for windows
-#ifndef _WIN32
-#ifndef _WIN64
+// NOTE: Abort testing does not work on Windows
+#if not defined(_WIN32) and not defined(_WIN64)
   "termination_test"_test = [&] {
     expect(aborts([] {
       auto allocator = monotonic_allocator<32>();
@@ -457,7 +456,6 @@ boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
     }))
       << "std::terminate not called.\n";
   };
-#endif
 #endif
 
   "max_buffer_test"_test = [&] {
