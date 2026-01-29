@@ -482,7 +482,8 @@ template<typename T>
 class strong_ptr
 {
 public:
-  using element_type = T;
+  using element_type = std::remove_extent_t<T>;
+  using weak_type = weak_ptr<T>;
 
   /// Delete default constructor - strong_ptr must always be valid
   strong_ptr() = delete;
@@ -1108,7 +1109,7 @@ public:
   template<typename U>
   friend class weak_ptr;
 
-  using element_type = T;
+  using element_type = std::remove_extent_t<T>;
 
   /**
    * @brief Default constructor creates empty weak_ptr
@@ -1358,6 +1359,9 @@ template<typename T>
 class optional_ptr
 {
 public:
+  using element_type = std::remove_extent_t<T>;
+  using weak_type = weak_ptr<T>;
+
   /**
    * @brief Default constructor creates a disengaged optional
    */
