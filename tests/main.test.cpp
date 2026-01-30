@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+namespace mem {
+extern void monotonic_test();
+}
+
 int main()
 {
+  mem::monotonic_test();
 }
