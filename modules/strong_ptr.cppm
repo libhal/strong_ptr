@@ -21,6 +21,7 @@ module;
 #include <exception>
 #include <memory>
 #include <memory_resource>
+#include <span>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -109,6 +110,8 @@ public:
     return *this == p_other;
   }
 
+  std::span<std::byte> m_buffer = {};
+
 protected:
   size_t m_space = 0;
   void* m_ptr = nullptr;
@@ -123,23 +126,43 @@ protected:
  * the memory and the allocator are bound to each other.
  *
  */
-export template<size_t MemorySize>
-class monotonic_allocator : public monotonic_allocator_base
+template<size_t MemorySize>
+struct monotonic_allocator
 {
-public:
   /**
    * @brief Construct a new monotonic allocator object
    *
    */
   monotonic_allocator()
   {
-    m_ptr = &m_buffer;
-    m_space = MemorySize;
+    m_base.m_buffer = m_storage;
   }
 
-private:
-  std::array<std::uint8_t, MemorySize> m_buffer = {};
+  std::pmr::memory_resource* resource()
+  {
+    return &m_base;
+  }
+
+  operator std::pmr::memory_resource*()
+  {
+    return &m_base;
+  }
+
+  template<typename T>
+  operator std::pmr::polymorphic_allocator<T>()
+  {
+    return &m_base;
+  }
+
+  monotonic_allocator_base m_base{};
+  std::array<std::byte, MemorySize> m_storage = {};
 };
+
+export template<size_t N>
+monotonic_allocator<N> make_monotonic_allocator()
+{
+  return monotonic_allocator<N>();
+}
 
 /**
  * @brief Control block for reference counting - type erased.

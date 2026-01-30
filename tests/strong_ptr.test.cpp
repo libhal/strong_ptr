@@ -429,7 +429,7 @@ boost::ut::suite<"strong_ptr_only_test"> strong_ptr_only_test = []() {
 boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
   using namespace boost::ut;
   "assignment_test"_test = [&] {
-    auto allocator = monotonic_allocator<32>();
+    auto allocator = mem::make_monotonic_allocator<32>().m_base;
 
     auto ptr1 = allocator.allocate(sizeof(char), alignof(char));
     auto char_ptr = static_cast<char*>(ptr1);
@@ -450,7 +450,7 @@ boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
 #if not defined(_WIN32) and not defined(_WIN64)
   "termination_test"_test = [&] {
     expect(aborts([] {
-      auto allocator = monotonic_allocator<32>();
+      auto allocator = mem::make_monotonic_allocator<32>().m_base;
       [[maybe_unused]] auto ptr =
         allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
     }))
@@ -459,7 +459,7 @@ boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
 #endif
 
   "max_buffer_test"_test = [&] {
-    auto allocator = monotonic_allocator<8>();
+    auto allocator = mem::make_monotonic_allocator<8>().m_base;
     auto ptr1 =
       allocator.allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
     auto int_ptr1 = static_cast<int*>(ptr1);
