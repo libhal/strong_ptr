@@ -117,22 +117,29 @@ struct monotonic_allocator
 };
 
 /**
- * @brief Creates monotonic allocators that do not need deallocation support.
- * Memory is stored internally such that the lifetime of the memory and the
- * allocator are bound to each other.
+ * @brief Creates monotonic allocators with embedded memory pool & memory 
+ * safety checks
  *
- * When allocating memory, if the required space or alignment is not available,
- * std::bad_alloc will be thrown. This allocator will never deallocate memory,
- * but instead removes bytes from the recorded allocated bytes count and checks
- * that the count is zero when the destructor is called. If the recorded
- * allcoated bytes is not 0 when destructor called, std::terminate is called.
+ * Allocated memory is fetched from the internal storage defined by the
+ * template parameter `StorageSizeBytes`. 
  *
- * @return monotonic_allocator
+ * Allocations are monotonic, meaning sequential and always progressing 
+ * forward. The amount of memory allocated is recorded. Previously allocated
+ * memory addresses are never returned from this memory resource. If the
+ * required space is not available `std::bad_alloc` is thrown.
+ *
+ * Every deallocation subtracts from the counter that records the total amount 
+ * of memory allocated. When this allocator is destroyed, if the allocated
+ * amount of bytes is not 0, std::terminate is called. This is to ensure that
+ * references to memory within this buffer cannot become invalid.
+ *
+ * @tparam StorageSizeBytes - Number of bytes for allocator memory
+ * @return monotonic_allocator - the monotonic allocator arena
  */
-export template<size_t N>
-monotonic_allocator<N> make_monotonic_allocator()
+export template<size_t StorageSizeBytes>
+monotonic_allocator<StorageSizeBytes> make_monotonic_allocator()
 {
-  return monotonic_allocator<N>();
+  return monotonic_allocator<StorageSizeBytes>();
 }
 
 /**
