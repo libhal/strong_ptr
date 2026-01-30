@@ -80,6 +80,7 @@ else()
         PRIVATE
         tests/main.test.cpp
         tests/strong_ptr.test.cpp
+        tests/monotonic_allocator.test.cpp
         tests/optional_ptr.test.cpp
         tests/weak_ptr.test.cpp
         tests/enable_from_this.test.cpp

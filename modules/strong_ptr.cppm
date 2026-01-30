@@ -21,6 +21,7 @@ module;
 #include <exception>
 #include <memory>
 #include <memory_resource>
+#include <span>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -39,40 +40,16 @@ class weak_ptr;
 export template<typename T>
 class optional_ptr;
 
-/**
- * @brief Creates allocators that do not need deallocation support. This
- * allocator will never deallocate memory, but instead removes bytes from the
- * recorded allocated bytes count and checks that the count is zero when the
- * destructor is called. Memory is stored internally such that the lifetime of
- * the memory and the allocator are bound to each other.
- *
- */
 class monotonic_allocator_base : public std::pmr::memory_resource
 {
 public:
-  /**
-   * @brief Destroy the monotonic allocator. The allocated bytes count must
-   * equal zero, otherwise std::terminate is called.
-   *
-   */
   ~monotonic_allocator_base()
   {
     if (m_allocated_bytes != 0) {
       std::terminate();
     }
   }
-  /**
-   * @brief Allocates storage with a size of at least p_bytes bytes, aligned to
-   * the specified p_alignment. Adjusts recorded space available and adds
-   * p_bytes to the allocated bytes count if memory is successfuly allocated.
-   *
-   * @param p_bytes number of bytes to allocate
-   * @param p_alignment  the desired alignment
-   * @return void* pointer to allocated space or nullptr if no space is
-   * available
-   * @throws std::bad_alloc if storage of the requested size and alignment
-   * cannot be obtained
-   */
+
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
   {
     void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
@@ -85,61 +62,85 @@ public:
     throw std::bad_alloc();
   };
 
-  /**
-   * @brief "Deallocates" bytes by removing p_bytes from the recorded
-   * allocated bytes to be checked when object destructed
-   *
-   * @param p_ptr pointer to resource previously allocated
-   * @param p_bytes number of bytes to record
-   */
   void do_deallocate(void*, std::size_t p_bytes, std::size_t)
   {
     m_allocated_bytes -= p_bytes;
   }
 
-  /**
-   * @brief Compares equality with another memory resource
-   *
-   * @param p_other resource to compare against *this
-   * @return true - resources are equal
-   * @return false - resources are not equal
-   */
   bool do_is_equal(std::pmr::memory_resource const& p_other) const noexcept
   {
     return *this == p_other;
   }
 
-protected:
   size_t m_space = 0;
   void* m_ptr = nullptr;
   std::int32_t m_allocated_bytes = 0;
 };
 
-/**
- * @brief Creates allocators that do not need deallocation support. This
- * allocator will never deallocate memory, but instead removes bytes from the
- * recorded allocated bytes count and checks that the count is zero when the
- * destructor is called. Memory is stored internally such that the lifetime of
- * the memory and the allocator are bound to each other.
- *
- */
-export template<size_t MemorySize>
-class monotonic_allocator : public monotonic_allocator_base
+template<size_t MemorySize>
+struct monotonic_allocator
 {
-public:
-  /**
-   * @brief Construct a new monotonic allocator object
-   *
-   */
   monotonic_allocator()
   {
-    m_ptr = &m_buffer;
-    m_space = MemorySize;
+    m_base.m_ptr = m_storage.data();
+    m_base.m_space = MemorySize;
   }
 
-private:
-  std::array<std::uint8_t, MemorySize> m_buffer = {};
+  std::pmr::memory_resource* resource()
+  {
+    return &m_base;
+  }
+
+  operator std::pmr::memory_resource*()
+  {
+    return &m_base;
+  }
+
+  std::pmr::memory_resource* operator->()
+  {
+    return &m_base;
+  }
+
+  std::pmr::memory_resource& operator*()
+  {
+    return m_base;
+  }
+
+  template<typename T>
+  operator std::pmr::polymorphic_allocator<T>()
+  {
+    return &m_base;
+  }
+
+  monotonic_allocator_base m_base{};
+  std::array<std::byte, MemorySize> m_storage = {};
 };
+
+/**
+ * @brief Creates monotonic allocators with embedded memory pool & memory 
+ * safety checks
+ *
+ * Allocated memory is fetched from the internal storage defined by the
+ * template parameter `StorageSizeBytes`. 
+ *
+ * Allocations are monotonic, meaning sequential and always progressing 
+ * forward. The amount of memory allocated is recorded. Previously allocated
+ * memory addresses are never returned from this memory resource. If the
+ * required space is not available `std::bad_alloc` is thrown.
+ *
+ * Every deallocation subtracts from the counter that records the total amount 
+ * of memory allocated. When this allocator is destroyed, if the allocated
+ * amount of bytes is not 0, std::terminate is called. This is to ensure that
+ * references to memory within this buffer cannot become invalid.
+ *
+ * @tparam StorageSizeBytes - Number of bytes for allocator memory
+ * @return monotonic_allocator - the monotonic allocator arena
+ */
+export template<size_t StorageSizeBytes>
+monotonic_allocator<StorageSizeBytes> make_monotonic_allocator()
+{
+  return monotonic_allocator<StorageSizeBytes>();
+}
 
 /**
  * @brief Control block for reference counting - type erased.
