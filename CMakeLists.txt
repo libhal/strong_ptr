@@ -18,8 +18,25 @@ cmake_minimum_required(VERSION 4.0)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_COLOR_DIAGNOSTICS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+set(USE_CLANG_TIDY ON)
 
 project(strong_ptr LANGUAGES CXX)
+
+# ==============================================================================
+# Find clang-tidy
+# ==============================================================================
+
+if(USE_CLANG_TIDY)
+    find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+    if(CLANG_TIDY_EXE)
+        message(STATUS "Clang-tidy found: ${CLANG_TIDY_EXE}")
+        set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+    else()
+        message(STATUS "Clang-tidy not found - continuing without clang-tidy")
+    endif()
+else()
+    message(WARNING "Clang-tidy checks disabled")
+endif()
 
 # ==============================================================================
 # Library
