@@ -14,9 +14,23 @@
 
 namespace mem {
 extern void monotonic_test();
-}
+extern void combined_mixins_test();
+extern void enable_strong_from_this_test();
+extern void weak_ptr_test();
+extern void optional_ptr_conversion_test();
+extern void optional_ptr_test();
+extern void strong_ptr_test();
+extern void strong_ptr_only_test();
+}  // namespace mem
 
 int main()
 {
   mem::monotonic_test();
+  mem::combined_mixins_test();
+  mem::enable_strong_from_this_test();
+  mem::weak_ptr_test();
+  mem::optional_ptr_conversion_test();
+  mem::optional_ptr_test();
+  mem::strong_ptr_test();
+  mem::strong_ptr_only_test();
 }

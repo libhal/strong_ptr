@@ -19,9 +19,10 @@
 import strong_ptr;
 import strong_ptr_unit_test;
 
+// NOLINTBEGIN(performance-unnecessary-copy-initialization)
 namespace mem {
-// Combined functionality test suite
-boost::ut::suite<"combined_mixins_test"> combined_mixins_test = []() {
+void combined_mixins_test()
+{
   using namespace boost::ut;
 
   "both_mixins_work_together"_test = [&] {
@@ -64,3 +65,4 @@ boost::ut::suite<"combined_mixins_test"> combined_mixins_test = []() {
   };
 };
 }  // namespace mem
+// NOLINTEND(performance-unnecessary-copy-initialization)

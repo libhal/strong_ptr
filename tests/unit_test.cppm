@@ -127,13 +127,13 @@ public:
   }
 
   // Method that needs to return strong_ptr to self
-  strong_ptr<self_aware_class> get_self()
+  [[nodiscard]] strong_ptr<self_aware_class> get_self()
   {
     return strong_from_this();
   }
 
   // Const version
-  strong_ptr<self_aware_class const> get_self_const() const
+  [[nodiscard]] strong_ptr<self_aware_class const> get_self_const() const
   {
     return strong_from_this();
   }
@@ -209,7 +209,7 @@ private:
   int m_value;
 };
 
-std::array<std::byte, 4096 * 16> buffer{};
+std::array<std::byte, 4096Uz * 16Uz> buffer{};
 std::pmr::monotonic_buffer_resource test_resource{ buffer.data(),
                                                    buffer.size() };
 std::pmr::memory_resource* test_allocator{ &test_resource };

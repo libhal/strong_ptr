@@ -19,68 +19,66 @@
 import strong_ptr;
 import strong_ptr_unit_test;
 
-namespace mem {
 // NOLINTBEGIN(performance-unnecessary-copy-initialization)
+namespace mem {
 // Strong pointer test suite
 void monotonic_test()
 {
   using namespace boost::ut;
-  boost::ut::suite<"monotonic_allocator_test"> monotonic_allocator_test = []() {
-    using namespace boost::ut;
-    "assignment_test"_test = [&] {
-      auto allocator = mem::make_monotonic_allocator<32>();
+  "assignment_test"_test = [&] {
+    auto allocator = mem::make_monotonic_allocator<32>();
 
-      auto ptr1 = allocator->allocate(sizeof(char), alignof(char));
-      auto char_ptr = static_cast<char*>(ptr1);
-      *char_ptr = 'a';
+    auto ptr1 = allocator->allocate(sizeof(char), alignof(char));
+    auto char_ptr = static_cast<char*>(ptr1);
+    *char_ptr = 'a';
 
-      auto ptr2 =
-        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      auto int_ptr = static_cast<int*>(ptr2);
-      *int_ptr = 1;
+    auto ptr2 =
+      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto int_ptr = static_cast<int*>(ptr2);
+    *int_ptr = 1;
 
-      expect(that % 1 == *int_ptr) << "Int assignment failed.\n";
-      expect(that % 'a' == *char_ptr) << "char assignment failed.\n";
-      allocator->deallocate(ptr2, sizeof(std::uint32_t));
-      allocator->deallocate(ptr1, sizeof(char));
-    };
+    expect(that % 1 == *int_ptr) << "Int assignment failed.\n";
+    expect(that % 'a' == *char_ptr) << "char assignment failed.\n";
+    allocator->deallocate(ptr2, sizeof(std::uint32_t));
+    allocator->deallocate(ptr1, sizeof(char));
+  };
 
 // NOTE: Abort testing does not work on Windows
 #if not defined(_WIN32) and not defined(_WIN64)
-    "termination_test"_test = [&] {
-      expect(aborts([] {
-        auto allocator = mem::make_monotonic_allocator<32>();
-        [[maybe_unused]] auto ptr =
-          allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      }))
-        << "std::terminate not called.\n";
-    };
+  "termination_test"_test = [&] {
+    expect(aborts([] {
+      auto allocator = mem::make_monotonic_allocator<32>();
+      [[maybe_unused]] auto ptr =
+        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    }))
+      << "std::terminate not called.\n";
+  };
 #endif
 
-    "max_buffer_test"_test = [&] {
-      auto allocator = mem::make_monotonic_allocator<8>();
-      auto ptr1 =
+  "max_buffer_test"_test = [&] {
+    auto allocator = mem::make_monotonic_allocator<8>();
+    auto ptr1 =
+      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto int_ptr1 = static_cast<int*>(ptr1);
+    *int_ptr1 = 1;
+
+    auto ptr2 =
+      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto int_ptr2 = static_cast<int*>(ptr2);
+    *int_ptr2 = 2;
+
+    expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
+    expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
+
+    expect(throws<std::bad_alloc>([&] {
+      [[maybe_unused]] auto ptr3 =
         allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      auto int_ptr1 = static_cast<int*>(ptr1);
-      *int_ptr1 = 1;
+    }))
+      << "Exception not thrown when bad alloc happens.\n";
 
-      auto ptr2 =
-        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      auto int_ptr2 = static_cast<int*>(ptr2);
-      *int_ptr2 = 2;
-
-      expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
-      expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
-
-      expect(throws<std::bad_alloc>([&] {
-        [[maybe_unused]] auto ptr3 =
-          allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      }))
-        << "Exception not thrown when bad alloc happens.\n";
-
-      allocator->deallocate(ptr1, sizeof(std::uint32_t));
-      allocator->deallocate(ptr2, sizeof(std::uint32_t));
-    };
+    allocator->deallocate(ptr1, sizeof(std::uint32_t));
+    allocator->deallocate(ptr2, sizeof(std::uint32_t));
   };
-};
+}
 }  // namespace mem
+// NOLINTEND(performance-unnecessary-copy-initialization)

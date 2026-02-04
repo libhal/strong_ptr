@@ -19,13 +19,15 @@
 import strong_ptr;
 import strong_ptr_unit_test;
 
+// NOLINTBEGIN(performance-unnecessary-copy-initialization)
 namespace mem {
 
 // Weak pointer test suite
-boost::ut::suite<"weak_ptr_test"> weak_ptr_test = []() {
+void weak_ptr_test()
+{
   using namespace boost::ut;
 
-  "construction"_test = [&] {
+  "weak_ptr_test construction"_test = [&] {
     // Test creating a weak_ptr from a strong_ptr
     auto strong = make_strong_ptr<test_class>(test_allocator, 42);
     weak_ptr<test_class> weak = strong;
@@ -129,5 +131,6 @@ boost::ut::suite<"weak_ptr_test"> weak_ptr_test = []() {
       expect(that % false == bool(locked))
         << "Locking expired weak_ptr should return null optional\n";
     };
-};
+}
 }  // namespace mem
+// NOLINTEND(performance-unnecessary-copy-initialization)

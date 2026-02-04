@@ -40,21 +40,20 @@ class weak_ptr;
 export template<typename T>
 class optional_ptr;
 
-class monotonic_allocator_base : public std::pmr::memory_resource
+struct monotonic_allocator_base : public std::pmr::memory_resource
 {
-public:
-  ~monotonic_allocator_base()
+  ~monotonic_allocator_base() override
   {
     if (m_allocated_bytes != 0) {
       std::terminate();
     }
   }
 
-  void* do_allocate(std::size_t p_bytes, std::size_t p_alignment)
+  void* do_allocate(std::size_t p_bytes, std::size_t p_alignment) override
   {
     void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
     if (result) {
-      m_allocated_bytes += p_bytes;
+      m_allocated_bytes += static_cast<decltype(m_allocated_bytes)>(p_bytes);
       m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
       m_space -= p_bytes;
       return result;
@@ -62,12 +61,13 @@ public:
     throw std::bad_alloc();
   };
 
-  void do_deallocate(void*, std::size_t p_bytes, std::size_t)
+  void do_deallocate(void*, std::size_t p_bytes, std::size_t) override
   {
-    m_allocated_bytes -= p_bytes;
+    m_allocated_bytes -= static_cast<decltype(m_allocated_bytes)>(p_bytes);
   }
 
-  bool do_is_equal(std::pmr::memory_resource const& p_other) const noexcept
+  [[nodiscard]] bool do_is_equal(
+    std::pmr::memory_resource const& p_other) const noexcept override
   {
     return *this == p_other;
   }
@@ -117,18 +117,18 @@ struct monotonic_allocator
 };
 
 /**
- * @brief Creates monotonic allocators with embedded memory pool & memory 
+ * @brief Creates monotonic allocators with embedded memory pool & memory
  * safety checks
  *
  * Allocated memory is fetched from the internal storage defined by the
- * template parameter `StorageSizeBytes`. 
+ * template parameter `StorageSizeBytes`.
  *
- * Allocations are monotonic, meaning sequential and always progressing 
+ * Allocations are monotonic, meaning sequential and always progressing
  * forward. The amount of memory allocated is recorded. Previously allocated
  * memory addresses are never returned from this memory resource. If the
  * required space is not available `std::bad_alloc` is thrown.
  *
- * Every deallocation subtracts from the counter that records the total amount 
+ * Every deallocation subtracts from the counter that records the total amount
  * of memory allocated. When this allocator is destroyed, if the allocated
  * amount of bytes is not 0, std::terminate is called. This is to ensure that
  * references to memory within this buffer cannot become invalid.
@@ -174,8 +174,6 @@ struct ref_info
                      type_erased_destruct_function_t* p_destroy)
     : allocator(p_allocator)
     , destroy(p_destroy)
-    , strong_count(0)
-    , weak_count(0)
   {
   }
 
@@ -366,11 +364,12 @@ public:
     return m_error_code;
   }
 
-  constexpr char const* what() const noexcept override
+  [[nodiscard]] constexpr char const* what() const noexcept override
   {
     return "mem::exception";
   }
 
+  // NOLINTNEXTLINE(modernize-use-equals-default)
   ~exception() override
   {
     // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
@@ -400,11 +399,12 @@ export struct out_of_range : public exception
   {
   }
 
-  constexpr char const* what() const noexcept override
+  [[nodiscard]] constexpr char const* what() const noexcept override
   {
     return "mem::out_of_range";
   }
 
+  // NOLINTNEXTLINE(modernize-use-equals-default)
   ~out_of_range() override
   {
     // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
@@ -426,11 +426,12 @@ export struct nullptr_access : public exception
   {
   }
 
-  constexpr char const* what() const noexcept override
+  [[nodiscard]] constexpr char const* what() const noexcept override
   {
     return "mem::nullptr_access";
   }
 
+  // NOLINTNEXTLINE(modernize-use-equals-default)
   ~nullptr_access() override
   {
     // Needed for GCC 14.2 LTO to link 🤷🏾‍♂️
@@ -514,8 +515,7 @@ public:
    * static storage duration.
    */
   constexpr strong_ptr(unsafe_assume_static_tag, T& p_object)
-    : m_ctrl(nullptr)
-    , m_ptr(&p_object)
+    : m_ptr(&p_object)
   {
   }
 
@@ -885,7 +885,8 @@ public:
    * allocate this object. Returns `nullptr` if the object was statically
    * allocated.
    */
-  constexpr std::pmr::memory_resource* get_allocator() const noexcept
+  [[nodiscard]] constexpr std::pmr::memory_resource* get_allocator()
+    const noexcept
   {
     if (m_ctrl == nullptr) {
       return nullptr;
@@ -1033,6 +1034,7 @@ protected:
     // Intentionally don't copy m_weak_this
   }
 
+  // NOLINTBEGIN(bugprone-unhandled-self-assignment)
   /**
    * @brief Protected assignment operator
    *
@@ -1045,6 +1047,7 @@ protected:
     // Intentionally don't assign m_weak_this
     return *this;
   }
+  // NOLINTEND(bugprone-unhandled-self-assignment)
 
   /**
    * @brief Protected destructor

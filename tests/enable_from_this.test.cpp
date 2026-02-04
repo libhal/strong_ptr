@@ -18,11 +18,12 @@
 import strong_ptr;
 import strong_ptr_unit_test;
 
+// NOLINTBEGIN(performance-unnecessary-copy-initialization)
 namespace mem {
 // enable_strong_from_this test suite
-boost::ut::suite<"enable_strong_from_this_test"> enable_strong_from_this_test =
-  []() {
-    using namespace boost::ut;
+void enable_strong_from_this_test()
+{
+  using namespace boost::ut;
 
     "basic_functionality"_test = [&] {
       auto obj = make_strong_ptr<self_aware_class>(test_allocator, 42);
@@ -114,6 +115,7 @@ boost::ut::suite<"enable_strong_from_this_test"> enable_strong_from_this_test =
         << "First object should retain its value";
       expect(that % 100 == locked2->value())
         << "Second object should retain its value";
-    };
   };
+}
 }  // namespace mem
+// NOLINTEND(performance-unnecessary-copy-initialization)
