@@ -19,13 +19,14 @@
 import strong_ptr;
 import strong_ptr_unit_test;
 
-namespace mem {
 // NOLINTBEGIN(performance-unnecessary-copy-initialization)
+namespace mem {
 // Strong pointer test suite
-boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
+void strong_ptr_test()
+{
   using namespace boost::ut;
 
-  "construction"_test = [&] {
+  "strong_ptr::construction"_test = [&] {
     // Test make_strong_ptr
     auto ptr = mem::make_strong_ptr<test_class>(test_allocator, 42);
 
@@ -56,7 +57,7 @@ boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
     expect(nothrow([&] { [[maybe_unused]] auto _ = ptr4->value(); }));
   };
 
-  "operator overloads"_test = [&] {
+  "strong_ptr operator overloads"_test = [&] {
     auto ptr = make_strong_ptr<test_class>(test_allocator, 42);
 
     // Test dereference operator
@@ -70,7 +71,7 @@ boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
     expect(that % 100 == ptr->value());
   };
 
-  "polymorphism"_test = [&] {
+  "strong_ptr polymorphism"_test = [&] {
     // Test polymorphic behavior
     auto derived = make_strong_ptr<derived_class>(test_allocator, 42);
     strong_ptr<base_class> base = derived;
@@ -196,7 +197,7 @@ boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
     expect(ptr1 != ptr3) << "Different objects should not be equal\n";
   };
 
-  "destruction"_test = [&] {
+  "strong_ptr::destruction"_test = [&] {
     expect(that % 0 == test_class::instance_count)
       << "Should start with no instances\n";
 
@@ -209,19 +210,20 @@ boost::ut::suite<"strong_ptr_test"> strong_ptr_test = []() {
     expect(that % 0 == test_class::instance_count)
       << "Instance should be destroyed\n";
   };
-};
+}
 
 // strong_ptr_only test suite
-boost::ut::suite<"strong_ptr_only_test"> strong_ptr_only_test = []() {
+void strong_ptr_only_test()
+{
   using namespace boost::ut;
 
-  "factory_creation"_test = [&] {
+  "strong_ptr_only_test::factory_creation"_test = [&] {
     auto obj = restricted_class::create(test_allocator, 42);
     expect(that % 42 == obj->value());
     expect(that % 1 == obj.use_count()) << "Should have one reference";
   };
 
-  "copy_move_prevention"_test = [&] {
+  "strong_ptr_only_test::copy_move_prevention"_test = [&] {
     auto obj = restricted_class::create(test_allocator, 42);
 
     // These should not compile if uncommented:
@@ -424,6 +426,6 @@ boost::ut::suite<"strong_ptr_only_test"> strong_ptr_only_test = []() {
     expect(derived.get_allocator() == base.get_allocator())
       << "Derived and base pointers should share the same allocator";
   };
-};
-
+}
 }  // namespace mem
+// NOLINTEND(performance-unnecessary-copy-initialization)
