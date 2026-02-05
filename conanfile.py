@@ -35,7 +35,8 @@ class strong_ptr_conan(ConanFile):
     topics = ("memory", "dynamic", "polymorphic_allocator",
               "pointer", "pointers")
     settings = "compiler", "build_type", "os", "arch"
-    exports_sources = "modules/*", "tests/*", "CMakeLists.txt", "LICENSE"
+    exports_sources = ("modules/*", "tests/*",
+                       "CMakeLists.txt", "LICENSE", ".clang-tidy")
     shared = False
 
     @property
