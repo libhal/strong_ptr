@@ -43,3 +43,17 @@ jobs:
     with:
       modules_support_needed: true
     secrets: inherit
+
+  tests:
+    name: ✅ Testing w/ Clang-Tidy enabled
+    uses: ./.github/workflows/tests.yml
+    with:
+      library: ${{ github.event.repository.name }}
+      version: ""
+      repo: ${{ github.repository }}
+      coverage: false
+      fail_on_coverage: false
+      coverage_threshold: "40 80"
+      conan_version: 2.25.0
+      dir: .
+    secrets: inherit
