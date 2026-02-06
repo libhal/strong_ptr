@@ -142,6 +142,9 @@ class strong_ptr_conan(ConanFile):
              dst=Path(self.package_folder) / "licenses",
              src=self.source_folder)
 
+    def package_id(self):
+        self.info.options.clear()
+
     def package_info(self):
         # DISABLE Conan's config file generation
         self.cpp_info.set_property("cmake_find_mode", "none")
