@@ -131,6 +131,8 @@ class strong_ptr_conan(ConanFile):
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
+        if not self.conf.get("tools.build:skip_test", default=False):
+            cmake.ctest()
 
     def package(self):
         cmake = CMake(self)

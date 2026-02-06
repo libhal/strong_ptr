@@ -21,13 +21,17 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 project(strong_ptr LANGUAGES CXX)
 
+# Options (can be overridden by Conan or command line)
+option(LIBHAL_ENABLE_CLANG_TIDY "Enable clang-tidy checks" OFF)
+option(LIBHAL_CLANG_TIDY_FIX "Apply clang-tidy fixes automatically. If set to ON, will automatically enable clang-tidy." OFF)
+
 # ==============================================================================
 # Find clang-tidy
 # ==============================================================================
 
 if(CMAKE_CROSSCOMPILING)
     message(STATUS "Cross compiling, skipping clang-tidy")
-elseif(LIBHAL_ENABLE_CLANG_TIDY)
+elseif(LIBHAL_ENABLE_CLANG_TIDY OR LIBHAL_CLANG_TIDY_FIX)
     find_program(CLANG_TIDY_EXE NAMES clang-tidy)
     if(CLANG_TIDY_EXE)
         message(STATUS "Clang-tidy found: ${CLANG_TIDY_EXE}")
@@ -48,6 +52,7 @@ endif()
 # ==============================================================================
 
 add_library(strong_ptr STATIC)
+add_library(strong_ptr::strong_ptr ALIAS strong_ptr)
 
 target_compile_features(strong_ptr PUBLIC cxx_std_23)
 
@@ -58,28 +63,29 @@ target_sources(strong_ptr PUBLIC
 )
 
 target_compile_options(strong_ptr PRIVATE
-    -g
-    -Werror
-    -Wno-unused-command-line-argument
-    -Wall
-    -Wextra
-    -Wshadow
-    -fexceptions
-    -fno-rtti)
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+        -g -Werror -Wall -Wextra -Wshadow -fexceptions -fno-rtti
+        -Wno-unused-command-line-argument>
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /W4 /WX /EHsc /GR->
+)
+
+include(GNUInstallDirs)
 
 install(
     TARGETS strong_ptr
     EXPORT strong_ptr_targets
-    FILE_SET CXX_MODULES DESTINATION "."
-    LIBRARY DESTINATION "lib"
-    ARCHIVE DESTINATION "lib"
-    CXX_MODULES_BMI DESTINATION "bmi"
+    FILE_SET CXX_MODULES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    CXX_MODULES_BMI DESTINATION "${CMAKE_INSTALL_LIBDIR}/bmi"
 )
 
 install(
     EXPORT strong_ptr_targets
     FILE "strong_ptr-config.cmake"
-    DESTINATION "lib/cmake"
+    NAMESPACE strong_ptr::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/strong_ptr"
     CXX_MODULES_DIRECTORY "cxx-modules"
 )
 
@@ -91,6 +97,9 @@ if(CMAKE_CROSSCOMPILING)
     message(STATUS "Cross compiling, skipping unit test execution")
 else()
     message(STATUS "Building unit tests!")
+
+    include(CTest)
+    enable_testing()
 
     find_package(ut REQUIRED)
     add_executable(strong_ptr_unit_test)
@@ -109,30 +118,27 @@ else()
         tests/mixins.test.cpp
     )
     target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
-    target_compile_options(strong_ptr_unit_test PUBLIC
-        -g
-        -Werror
-        -Wno-unused-command-line-argument
-        -Wall
-        -Wextra
-        -Wshadow
-        -pedantic
-        -fexceptions
-        -fno-rtti
+    target_compile_options(strong_ptr_unit_test PRIVATE
+        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+            -g -Werror -Wall -Wextra -Wshadow -pedantic -fexceptions -fno-rtti
+            -Wno-unused-command-line-argument>
+        $<$<CXX_COMPILER_ID:MSVC>:
+            /W4 /WX /EHsc /GR- /permissive->
     )
 
-    # Enable ASAN only on non-Windows platforms (Windows doesn't support it)
-    if(NOT WIN32)
-        target_compile_options(strong_ptr_unit_test PUBLIC -fsanitize=address)
-        target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
-    endif()
+    # Enable ASAN (GCC/Clang on non-Windows only)
+    target_compile_options(strong_ptr_unit_test PRIVATE
+        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-fsanitize=address>
+    )
+
+    target_link_options(strong_ptr_unit_test PRIVATE
+        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
+            -fsanitize=address>
+    )
 
     target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
 
-    add_custom_target(run_tests ALL
-      DEPENDS strong_ptr_unit_test
-      COMMAND strong_ptr_unit_test
-    )
+    add_test(NAME strong_ptr_unit_test COMMAND strong_ptr_unit_test)
 endif()
 
 # Always run this custom target by making it depend on ALL
