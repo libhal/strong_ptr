@@ -21,6 +21,11 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 project(strong_ptr LANGUAGES CXX)
 
+# Require Ninja or Visual Studio for modules
+if(NOT CMAKE_GENERATOR MATCHES "Ninja|Visual Studio")
+    message(FATAL_ERROR "C++20 modules require Ninja or Visual Studio generator")
+endif()
+
 # Options (can be overridden by Conan or command line)
 option(LIBHAL_ENABLE_CLANG_TIDY "Enable clang-tidy checks" OFF)
 option(LIBHAL_CLANG_TIDY_FIX "Apply clang-tidy fixes automatically. If set to ON, will automatically enable clang-tidy." OFF)
@@ -91,9 +96,9 @@ target_sources(strong_ptr PUBLIC
 target_compile_options(strong_ptr PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
         -g -Werror -Wall -Wextra -Wshadow -fexceptions -fno-rtti
-        -Wno-unused-command-line-argument>
+        -Wno-unused-command-line-argument -pedantic>
     $<$<CXX_COMPILER_ID:MSVC>:
-        /W4 /WX /EHsc /GR->
+        /W4 /WX /EHsc /permissive- /GR->
 )
 
 include(GNUInstallDirs)

@@ -42,40 +42,36 @@ void run_test() noexcept
   };
 
   "max_buffer_test"_test = [&] {
-    try {
-      auto allocator = mem::make_monotonic_allocator<8>();
-      auto ptr1 =
+    auto allocator = mem::make_monotonic_allocator<8>();
+    auto ptr1 =
+      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto* int_ptr1 = static_cast<int*>(ptr1);
+    *int_ptr1 = 1;
+
+    auto ptr2 =
+      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+    auto* int_ptr2 = static_cast<int*>(ptr2);
+    *int_ptr2 = 2;
+
+    expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
+    expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
+
+    expect(throws<std::bad_alloc>([&] {
+      auto volatile ptr3 =
         allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      auto* int_ptr1 = static_cast<int*>(ptr1);
-      *int_ptr1 = 1;
+      auto volatile* int_ptr3 = static_cast<int volatile*>(ptr3);
+      if (int_ptr3 == nullptr) {
+        std::println("int_ptr3 is nullptr somehow?!");
+      }
+      // NOTE: If we have accessed memory beyond the bounds, then
+      // this should trigger ASAN or equivalent
+      *int_ptr3 = 3;
+      expect(that % 3 == *int_ptr3) << "Int assignment failed.\n";
+    }))
+      << "Exception not thrown when bad alloc happens.\n";
 
-      auto ptr2 =
-        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-      auto* int_ptr2 = static_cast<int*>(ptr2);
-      *int_ptr2 = 2;
-
-      expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
-      expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
-
-      expect(throws<std::bad_alloc>([&] {
-        auto volatile ptr3 =
-          allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-        auto volatile* int_ptr3 = static_cast<int volatile*>(ptr3);
-        if (int_ptr3 == nullptr) {
-          std::println("int_ptr3 is nullptr somehow?!");
-        }
-        // NOTE: If we have accessed memory beyond the bounds, then
-        // this should trigger ASAN or equivalent
-        *int_ptr3 = 3;
-        expect(that % 3 == *int_ptr3) << "Int assignment failed.\n";
-      }))
-        << "Exception not thrown when bad alloc happens.\n";
-
-      allocator->deallocate(ptr1, sizeof(std::uint32_t));
-      allocator->deallocate(ptr2, sizeof(std::uint32_t));
-    } catch (...) {
-      std::println("log");
-    }
+    allocator->deallocate(ptr1, sizeof(std::uint32_t));
+    allocator->deallocate(ptr2, sizeof(std::uint32_t));
   };
 
 // NOTE: Abort testing does not work on Windows

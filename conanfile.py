@@ -19,6 +19,7 @@ from conan.tools.cmake import CMake, cmake_layout, CMakeToolchain, CMakeDeps
 from conan.tools.files import copy
 from conan.errors import ConanInvalidConfiguration
 from conan.tools.build import check_min_cppstd
+from conan.tools.scm import Version
 from pathlib import Path
 
 
@@ -31,7 +32,7 @@ class strong_ptr_conan(ConanFile):
     url = "https://github.com/libhal/strong_ptr"
     homepage = "https://github.com/libhal/strong_ptr"
     description = (
-        "An non-null alternative to std::shared_ptr for memory constrained systems and fewer footguns.")
+        "A non-null alternative to std::shared_ptr for memory constrained systems and fewer footguns.")
     topics = ("memory", "dynamic", "polymorphic_allocator",
               "pointer", "pointers")
     settings = "compiler", "build_type", "os", "arch"
@@ -85,7 +86,7 @@ class strong_ptr_conan(ConanFile):
                 f"Compiler {compiler} is not supported for C++20 modules")
 
         min_version, error_msg = min_versions[compiler_key]
-        if version < min_version:
+        if Version(version) < min_version:
             raise ConanInvalidConfiguration(error_msg)
 
     def set_version(self):

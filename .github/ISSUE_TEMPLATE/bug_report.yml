@@ -1,0 +1,76 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug! Please fill out the sections below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Minimal steps or code to reproduce the issue.
+      placeholder: |
+        1. Create a conanfile with ...
+        2. Run `conan create .`
+        3. See error ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened, including any error messages.
+    validations:
+      required: true
+
+  - type: input
+    id: compiler
+    attributes:
+      label: Compiler & Version
+      description: e.g. GCC 14.2, Clang 19, MSVC 17.4
+    validations:
+      required: true
+
+  - type: input
+    id: os_architecture
+    attributes:
+      label: Operating System & Architecture
+      description: e.g. Ubuntu 24.04 aarch64, macOS 15 aarch64, Windows 11 x86_64
+    validations:
+      required: true
+
+  - type: input
+    id: conan-version
+    attributes:
+      label: Conan Version
+      description: Output of `conan --version`
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, logs, or screenshots.
+    validations:
+      required: false
