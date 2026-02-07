@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory_resource>
-
 #include <boost/ut.hpp>
 
 import test_util;
@@ -22,8 +20,8 @@ import strong_ptr;
 using namespace boost::ut;
 using namespace mem;
 
-int main()
-try {
+void run_test() noexcept
+{
   // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "assignment_test"_test = [&] {
     auto allocator = mem::make_monotonic_allocator<32>();
@@ -92,7 +90,10 @@ try {
   };
 #endif
   // NOLINTEND(performance-unnecessary-copy-initialization)
-} catch (...) {
-  std::println("What even is this?");
+}
+
+int main()
+{
+  run_test();
   return 0;
 }

@@ -20,7 +20,7 @@ import strong_ptr;
 using namespace boost::ut;
 using namespace mem;
 
-int main()
+void run_test() noexcept
 {
   // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "weak_ptr_test construction"_test = [&] {
@@ -128,4 +128,10 @@ int main()
         << "Locking expired weak_ptr should return null optional\n";
     };
   // NOLINTEND(performance-unnecessary-copy-initialization)
+}
+
+int main()
+{
+  run_test();
+  return 0;
 }

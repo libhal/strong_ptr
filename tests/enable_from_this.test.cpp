@@ -20,7 +20,7 @@ import strong_ptr;
 using namespace boost::ut;
 using namespace mem;
 
-int main()
+void run_test() noexcept
 {
   // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "basic_functionality"_test = [&] {
@@ -112,4 +112,10 @@ int main()
       << "Second object should retain its value";
   };
   // NOLINTEND(performance-unnecessary-copy-initialization)
+}
+
+int main()
+{
+  run_test();
+  return 0;
 }

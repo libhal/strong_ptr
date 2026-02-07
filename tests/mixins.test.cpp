@@ -20,7 +20,7 @@ import strong_ptr;
 using namespace boost::ut;
 using namespace mem;
 
-int main()
+void run_test() noexcept
 {
   // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "both_mixins_work_together"_test = [&] {
@@ -62,4 +62,10 @@ int main()
     expect(that % 100 == self3->value());
   };
   // NOLINTEND(performance-unnecessary-copy-initialization)
+}
+
+int main()
+{
+  run_test();
+  return 0;
 }

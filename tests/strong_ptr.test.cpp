@@ -20,7 +20,7 @@ import strong_ptr;
 using namespace boost::ut;
 using namespace mem;
 
-int main()
+void run_test() noexcept
 {
   // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "strong_ptr::construction"_test = [&] {
@@ -418,4 +418,10 @@ int main()
       << "Derived and base pointers should share the same allocator";
   };
   // NOLINTEND(performance-unnecessary-copy-initialization)
+}
+
+int main()
+{
+  run_test();
+  return 0;
 }
