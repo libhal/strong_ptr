@@ -131,6 +131,8 @@ class strong_ptr_conan(ConanFile):
         cmake = CMake(self)
         cmake.configure()
         cmake.build()
+        if not self.conf.get("tools.build:skip_test", default=False):
+            cmake.ctest(["--output-on-failure"])
 
     def package(self):
         cmake = CMake(self)
@@ -139,6 +141,9 @@ class strong_ptr_conan(ConanFile):
         copy(self, "LICENSE",
              dst=Path(self.package_folder) / "licenses",
              src=self.source_folder)
+
+    def package_id(self):
+        self.info.options.clear()
 
     def package_info(self):
         # DISABLE Conan's config file generation

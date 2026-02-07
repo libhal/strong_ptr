@@ -21,13 +21,17 @@ set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 project(strong_ptr LANGUAGES CXX)
 
+# Options (can be overridden by Conan or command line)
+option(LIBHAL_ENABLE_CLANG_TIDY "Enable clang-tidy checks" OFF)
+option(LIBHAL_CLANG_TIDY_FIX "Apply clang-tidy fixes automatically. If set to ON, will automatically enable clang-tidy." OFF)
+
 # ==============================================================================
 # Find clang-tidy
 # ==============================================================================
 
 if(CMAKE_CROSSCOMPILING)
     message(STATUS "Cross compiling, skipping clang-tidy")
-elseif(LIBHAL_ENABLE_CLANG_TIDY)
+elseif(LIBHAL_ENABLE_CLANG_TIDY OR LIBHAL_CLANG_TIDY_FIX)
     find_program(CLANG_TIDY_EXE NAMES clang-tidy)
     if(CLANG_TIDY_EXE)
         message(STATUS "Clang-tidy found: ${CLANG_TIDY_EXE}")
@@ -44,10 +48,36 @@ else()
 endif()
 
 # ==============================================================================
+# Compile Options Interface Libraries
+# ==============================================================================
+
+# Common compile options for all targets
+add_library(libhal_compile_flags INTERFACE)
+target_compile_options(libhal_compile_flags INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+        -g -Werror -Wall -Wextra -Wshadow -fexceptions -fno-rtti
+        -Wno-unused-command-line-argument -pedantic>
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /W4 /WX /EHsc /permissive- /GR->
+)
+
+# AddressSanitizer (GCC/Clang on non-Windows only)
+add_library(libhal_asan INTERFACE)
+if(NOT WIN32)
+    target_compile_options(libhal_asan INTERFACE
+        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fsanitize=address>
+    )
+    target_link_options(libhal_asan INTERFACE
+        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fsanitize=address>
+    )
+endif()
+
+# ==============================================================================
 # Library
 # ==============================================================================
 
 add_library(strong_ptr STATIC)
+add_library(strong_ptr::strong_ptr ALIAS strong_ptr)
 
 target_compile_features(strong_ptr PUBLIC cxx_std_23)
 
@@ -57,29 +87,31 @@ target_sources(strong_ptr PUBLIC
     FILES modules/strong_ptr.cppm
 )
 
+# Use compile options directly for exported library (avoids export set issues)
 target_compile_options(strong_ptr PRIVATE
-    -g
-    -Werror
-    -Wno-unused-command-line-argument
-    -Wall
-    -Wextra
-    -Wshadow
-    -fexceptions
-    -fno-rtti)
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+        -g -Werror -Wall -Wextra -Wshadow -fexceptions -fno-rtti
+        -Wno-unused-command-line-argument>
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /W4 /WX /EHsc /GR->
+)
+
+include(GNUInstallDirs)
 
 install(
     TARGETS strong_ptr
     EXPORT strong_ptr_targets
-    FILE_SET CXX_MODULES DESTINATION "."
-    LIBRARY DESTINATION "lib"
-    ARCHIVE DESTINATION "lib"
-    CXX_MODULES_BMI DESTINATION "bmi"
+    FILE_SET CXX_MODULES DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}"
+    LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    CXX_MODULES_BMI DESTINATION "${CMAKE_INSTALL_LIBDIR}/bmi"
 )
 
 install(
     EXPORT strong_ptr_targets
     FILE "strong_ptr-config.cmake"
-    DESTINATION "lib/cmake"
+    NAMESPACE libhal::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/strong_ptr"
     CXX_MODULES_DIRECTORY "cxx-modules"
 )
 
@@ -92,47 +124,42 @@ if(CMAKE_CROSSCOMPILING)
 else()
     message(STATUS "Building unit tests!")
 
+    include(CTest)
+    enable_testing()
+
     find_package(ut REQUIRED)
-    add_executable(strong_ptr_unit_test)
-    target_sources(strong_ptr_unit_test PUBLIC
-        FILE_SET CXX_MODULES
-        TYPE CXX_MODULES
-        FILES
-        tests/unit_test.cppm
-        PRIVATE
-        tests/main.test.cpp
-        tests/strong_ptr.test.cpp
-        tests/monotonic_allocator.test.cpp
-        tests/optional_ptr.test.cpp
-        tests/weak_ptr.test.cpp
-        tests/enable_from_this.test.cpp
-        tests/mixins.test.cpp
-    )
-    target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
-    target_compile_options(strong_ptr_unit_test PUBLIC
-        -g
-        -Werror
-        -Wno-unused-command-line-argument
-        -Wall
-        -Wextra
-        -Wshadow
-        -pedantic
-        -fexceptions
-        -fno-rtti
+
+    # List of test files (without .test.cpp extension)
+    set(TEST_NAMES
+        enable_from_this
+        strong_ptr
+        mixins
+        weak_ptr
+        optional_ptr
+        monotonic_allocator
     )
 
-    # Enable ASAN only on non-Windows platforms (Windows doesn't support it)
-    if(NOT WIN32)
-        target_compile_options(strong_ptr_unit_test PUBLIC -fsanitize=address)
-        target_link_options(strong_ptr_unit_test PRIVATE -fsanitize=address)
-    endif()
+    foreach(TEST_NAME IN LISTS TEST_NAMES)
+        set(TEST_TARGET "test_${TEST_NAME}")
+        add_executable(${TEST_TARGET})
 
-    target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
+        target_sources(${TEST_TARGET} PUBLIC
+            FILE_SET CXX_MODULES
+            TYPE CXX_MODULES
+            FILES tests/util.cppm
+            PRIVATE
+            tests/${TEST_NAME}.test.cpp
+        )
 
-    add_custom_target(run_tests ALL
-      DEPENDS strong_ptr_unit_test
-      COMMAND strong_ptr_unit_test
-    )
+        target_compile_features(${TEST_TARGET} PRIVATE cxx_std_23)
+        target_link_libraries(${TEST_TARGET} PRIVATE
+            Boost::ut
+            strong_ptr
+            libhal_compile_flags
+            libhal_asan
+        )
+        add_test(NAME ${TEST_TARGET} COMMAND ${TEST_TARGET})
+    endforeach()
 endif()
 
 # Always run this custom target by making it depend on ALL

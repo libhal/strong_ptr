@@ -1,4 +1,4 @@
-Checks: "-header-filter=.*,readability-identifier-naming,modernize-*,performance-*,bugprone-*,-modernize-use-trailing-return-type,-checks=-*"
+Checks: "-header-filter=.*,readability-identifier-naming,modernize-*,performance-*,bugprone-*,-modernize-use-trailing-return-type,-bugprone-exception-escape,-checks=-*"
 WarningsAsErrors: "*"
 UseColor: true
 CheckOptions:

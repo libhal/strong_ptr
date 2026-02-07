@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory_resource>
-
 #include <boost/ut.hpp>
 
+import test_util;
 import strong_ptr;
-import strong_ptr_unit_test;
 
-namespace mem {
-// NOLINTBEGIN(performance-unnecessary-copy-initialization)
-// Enhanced optional_ptr test suite
-void optional_ptr_conversion_test()
+using namespace boost::ut;
+using namespace mem;
+
+void run_test() noexcept
 {
-  using namespace boost::ut;
-
+  // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "implicit_conversion_to_strong_ptr"_test = [&] {
     auto strong = make_strong_ptr<test_class>(test_allocator, 42);
     optional_ptr<test_class> opt = strong;
@@ -53,6 +50,7 @@ void optional_ptr_conversion_test()
 
     expect(throws<mem::nullptr_access>([&] {
       strong_ptr<test_class> converted = empty;  // Should throw
+      expect(that % 0 == converted->value());
     }));
   };
 
@@ -108,12 +106,6 @@ void optional_ptr_conversion_test()
       expect(that % 42 == result);
     }));
   };
-}
-
-// Optional pointer test suite
-void optional_ptr_test()
-{
-  using namespace boost::ut;
 
   "optional_ptr::construction"_test = [&] {
     // Test default constructor
@@ -168,11 +160,15 @@ void optional_ptr_test()
 
     // Test exception on accessing null optional
     optional_ptr<test_class> empty;
-    expect(throws<mem::nullptr_access>(
-      [&] { [[maybe_unused]] auto _ = empty->value(); }))
+    expect(throws<mem::nullptr_access>([&] {
+      auto value = empty->value();
+      expect(that % 0 == value);
+    }))
       << "Accessing null optional with arrow operator should throw\n";
-    expect(throws<mem::nullptr_access>(
-      [&] { [[maybe_unused]] auto _ = (*empty).value(); }))
+    expect(throws<mem::nullptr_access>([&] {
+      auto value = (*empty).value();
+      expect(that % 0 == value);
+    }))
       << "Accessing null optional with dereference operator should throw\n";
   };
 
@@ -239,6 +235,11 @@ void optional_ptr_test()
     expect(opt1 != nullptr) << "Valid optional should not equal nullptr\n";
     expect(nullptr != opt1) << "nullptr should not equal valid optional\n";
   };
+  // NOLINTEND(performance-unnecessary-copy-initialization)
 }
-}  // namespace mem
-// NOLINTEND(performance-unnecessary-copy-initialization)
+
+int main()
+{
+  run_test();
+  return 0;
+}

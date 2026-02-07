@@ -13,18 +13,16 @@
 // limitations under the License.
 
 #include <boost/ut.hpp>
-#include <memory_resource>
 
+import test_util;
 import strong_ptr;
-import strong_ptr_unit_test;
 
-// NOLINTBEGIN(performance-unnecessary-copy-initialization)
-namespace mem {
-// enable_strong_from_this test suite
-void enable_strong_from_this_test()
+using namespace boost::ut;
+using namespace mem;
+
+void run_test() noexcept
 {
-  using namespace boost::ut;
-
+  // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "basic_functionality"_test = [&] {
     auto obj = make_strong_ptr<self_aware_class>(test_allocator, 42);
 
@@ -113,6 +111,11 @@ void enable_strong_from_this_test()
     expect(that % 100 == locked2->value())
       << "Second object should retain its value";
   };
+  // NOLINTEND(performance-unnecessary-copy-initialization)
 }
-}  // namespace mem
-// NOLINTEND(performance-unnecessary-copy-initialization)
+
+int main()
+{
+  run_test();
+  return 0;
+}

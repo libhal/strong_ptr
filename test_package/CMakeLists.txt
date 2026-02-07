@@ -37,7 +37,7 @@ target_sources(${PROJECT_NAME} PUBLIC
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_options(${PROJECT_NAME} PRIVATE -fexceptions -fno-rtti)
-target_link_libraries(${PROJECT_NAME} PRIVATE strong_ptr)
+target_link_libraries(${PROJECT_NAME} PRIVATE libhal::strong_ptr)
 
 # Always run this custom target by making it depend on ALL
 add_custom_target(copy_compile_commands ALL
