@@ -12,21 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory_resource>
-
 #include <boost/ut.hpp>
 
+import test_util;
 import strong_ptr;
-import strong_ptr_unit_test;
 
-// NOLINTBEGIN(performance-unnecessary-copy-initialization)
-namespace mem {
+using namespace boost::ut;
+using namespace mem;
 
-// Weak pointer test suite
-void weak_ptr_test()
+int main()
 {
-  using namespace boost::ut;
-
+  // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "weak_ptr_test construction"_test = [&] {
     // Test creating a weak_ptr from a strong_ptr
     auto strong = make_strong_ptr<test_class>(test_allocator, 42);
@@ -131,6 +127,5 @@ void weak_ptr_test()
       expect(that % false == bool(locked))
         << "Locking expired weak_ptr should return null optional\n";
     };
+  // NOLINTEND(performance-unnecessary-copy-initialization)
 }
-}  // namespace mem
-// NOLINTEND(performance-unnecessary-copy-initialization)

@@ -38,6 +38,7 @@
     "Estell",
     "NOLINTNEXTLINE",
     "bugprone",
+    "ASAN",
   ],
   "ignorePaths": [
     "build/",

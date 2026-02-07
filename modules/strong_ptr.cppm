@@ -52,13 +52,14 @@ struct monotonic_allocator_base : public std::pmr::memory_resource
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment) override
   {
     void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
-    if (result) {
-      m_allocated_bytes += static_cast<decltype(m_allocated_bytes)>(p_bytes);
-      m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
-      m_space -= p_bytes;
-      return result;
+    if (result == nullptr) [[unlikely]] {
+      throw std::bad_alloc();
     }
-    throw std::bad_alloc();
+
+    m_allocated_bytes += static_cast<decltype(m_allocated_bytes)>(p_bytes);
+    m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
+    m_space -= p_bytes;
+    return result;
   };
 
   void do_deallocate(void*, std::size_t p_bytes, std::size_t) override

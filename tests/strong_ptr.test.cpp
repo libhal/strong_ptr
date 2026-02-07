@@ -12,20 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory_resource>
-
 #include <boost/ut.hpp>
 
+import test_util;
 import strong_ptr;
-import strong_ptr_unit_test;
 
-// NOLINTBEGIN(performance-unnecessary-copy-initialization)
-namespace mem {
-// Strong pointer test suite
-void strong_ptr_test()
+using namespace boost::ut;
+using namespace mem;
+
+int main()
 {
-  using namespace boost::ut;
-
+  // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "strong_ptr::construction"_test = [&] {
     // Test make_strong_ptr
     auto ptr = mem::make_strong_ptr<test_class>(test_allocator, 42);
@@ -210,12 +207,6 @@ void strong_ptr_test()
     expect(that % 0 == test_class::instance_count)
       << "Instance should be destroyed\n";
   };
-}
-
-// strong_ptr_only test suite
-void strong_ptr_only_test()
-{
-  using namespace boost::ut;
 
   "strong_ptr_only_test::factory_creation"_test = [&] {
     auto obj = restricted_class::create(test_allocator, 42);
@@ -426,6 +417,5 @@ void strong_ptr_only_test()
     expect(derived.get_allocator() == base.get_allocator())
       << "Derived and base pointers should share the same allocator";
   };
+  // NOLINTEND(performance-unnecessary-copy-initialization)
 }
-}  // namespace mem
-// NOLINTEND(performance-unnecessary-copy-initialization)

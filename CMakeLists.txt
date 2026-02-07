@@ -48,6 +48,31 @@ else()
 endif()
 
 # ==============================================================================
+# Compile Options Interface Libraries
+# ==============================================================================
+
+# Common compile options for all targets
+add_library(libhal_compile_flags INTERFACE)
+target_compile_options(libhal_compile_flags INTERFACE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+        -g -Werror -Wall -Wextra -Wshadow -fexceptions -fno-rtti
+        -Wno-unused-command-line-argument -pedantic>
+    $<$<CXX_COMPILER_ID:MSVC>:
+        /W4 /WX /EHsc /permissive- /GR->
+)
+
+# AddressSanitizer (GCC/Clang on non-Windows only)
+add_library(libhal_asan INTERFACE)
+if(NOT WIN32)
+    target_compile_options(libhal_asan INTERFACE
+        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fsanitize=address>
+    )
+    target_link_options(libhal_asan INTERFACE
+        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fsanitize=address>
+    )
+endif()
+
+# ==============================================================================
 # Library
 # ==============================================================================
 
@@ -62,6 +87,7 @@ target_sources(strong_ptr PUBLIC
     FILES modules/strong_ptr.cppm
 )
 
+# Use compile options directly for exported library (avoids export set issues)
 target_compile_options(strong_ptr PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
         -g -Werror -Wall -Wextra -Wshadow -fexceptions -fno-rtti
@@ -102,43 +128,38 @@ else()
     enable_testing()
 
     find_package(ut REQUIRED)
-    add_executable(strong_ptr_unit_test)
-    target_sources(strong_ptr_unit_test PUBLIC
-        FILE_SET CXX_MODULES
-        TYPE CXX_MODULES
-        FILES
-        tests/unit_test.cppm
-        PRIVATE
-        tests/main.test.cpp
-        tests/strong_ptr.test.cpp
-        tests/monotonic_allocator.test.cpp
-        tests/optional_ptr.test.cpp
-        tests/weak_ptr.test.cpp
-        tests/enable_from_this.test.cpp
-        tests/mixins.test.cpp
-    )
-    target_compile_features(strong_ptr_unit_test PUBLIC cxx_std_23)
-    target_compile_options(strong_ptr_unit_test PRIVATE
-        $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
-            -g -Werror -Wall -Wextra -Wshadow -pedantic -fexceptions -fno-rtti
-            -Wno-unused-command-line-argument>
-        $<$<CXX_COMPILER_ID:MSVC>:
-            /W4 /WX /EHsc /GR- /permissive->
+
+    # List of test files (without .test.cpp extension)
+    set(TEST_NAMES
+        enable_from_this
+        strong_ptr
+        mixins
+        weak_ptr
+        optional_ptr
+        monotonic_allocator
     )
 
-    # Enable ASAN (GCC/Clang on non-Windows only)
-    target_compile_options(strong_ptr_unit_test PRIVATE
-        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-fsanitize=address>
-    )
+    foreach(TEST_NAME IN LISTS TEST_NAMES)
+        set(TEST_TARGET "test_${TEST_NAME}")
+        add_executable(${TEST_TARGET})
 
-    target_link_options(strong_ptr_unit_test PRIVATE
-        $<$<AND:$<NOT:$<PLATFORM_ID:Windows>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
-            -fsanitize=address>
-    )
+        target_sources(${TEST_TARGET} PUBLIC
+            FILE_SET CXX_MODULES
+            TYPE CXX_MODULES
+            FILES tests/util.cppm
+            PRIVATE
+            tests/${TEST_NAME}.test.cpp
+        )
 
-    target_link_libraries(strong_ptr_unit_test PRIVATE Boost::ut strong_ptr)
-
-    add_test(NAME strong_ptr_unit_test COMMAND strong_ptr_unit_test)
+        target_compile_features(${TEST_TARGET} PRIVATE cxx_std_23)
+        target_link_libraries(${TEST_TARGET} PRIVATE
+            Boost::ut
+            strong_ptr
+            libhal_compile_flags
+            libhal_asan
+        )
+        add_test(NAME ${TEST_TARGET} COMMAND ${TEST_TARGET})
+    endforeach()
 endif()
 
 # Always run this custom target by making it depend on ALL

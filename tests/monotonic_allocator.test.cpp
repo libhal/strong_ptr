@@ -16,15 +16,15 @@
 
 #include <boost/ut.hpp>
 
+import test_util;
 import strong_ptr;
-import strong_ptr_unit_test;
 
-// NOLINTBEGIN(performance-unnecessary-copy-initialization)
-namespace mem {
-// Strong pointer test suite
-void monotonic_test()
-{
-  using namespace boost::ut;
+using namespace boost::ut;
+using namespace mem;
+
+int main()
+try {
+  // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "assignment_test"_test = [&] {
     auto allocator = mem::make_monotonic_allocator<32>();
 
@@ -43,6 +43,43 @@ void monotonic_test()
     allocator->deallocate(ptr1, sizeof(char));
   };
 
+  "max_buffer_test"_test = [&] {
+    try {
+      auto allocator = mem::make_monotonic_allocator<8>();
+      auto ptr1 =
+        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+      auto* int_ptr1 = static_cast<int*>(ptr1);
+      *int_ptr1 = 1;
+
+      auto ptr2 =
+        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+      auto* int_ptr2 = static_cast<int*>(ptr2);
+      *int_ptr2 = 2;
+
+      expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
+      expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
+
+      expect(throws<std::bad_alloc>([&] {
+        auto volatile ptr3 =
+          allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
+        auto volatile* int_ptr3 = static_cast<int volatile*>(ptr3);
+        if (int_ptr3 == nullptr) {
+          std::println("int_ptr3 is nullptr somehow?!");
+        }
+        // NOTE: If we have accessed memory beyond the bounds, then
+        // this should trigger ASAN or equivalent
+        *int_ptr3 = 3;
+        expect(that % 3 == *int_ptr3) << "Int assignment failed.\n";
+      }))
+        << "Exception not thrown when bad alloc happens.\n";
+
+      allocator->deallocate(ptr1, sizeof(std::uint32_t));
+      allocator->deallocate(ptr2, sizeof(std::uint32_t));
+    } catch (...) {
+      std::println("log");
+    }
+  };
+
 // NOTE: Abort testing does not work on Windows
 #if not defined(_WIN32) and not defined(_WIN64)
   "termination_test"_test = [&] {
@@ -54,31 +91,8 @@ void monotonic_test()
       << "std::terminate not called.\n";
   };
 #endif
-
-  "max_buffer_test"_test = [&] {
-    auto allocator = mem::make_monotonic_allocator<8>();
-    auto ptr1 =
-      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-    auto int_ptr1 = static_cast<int*>(ptr1);
-    *int_ptr1 = 1;
-
-    auto ptr2 =
-      allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-    auto int_ptr2 = static_cast<int*>(ptr2);
-    *int_ptr2 = 2;
-
-    expect(that % 1 == *int_ptr1) << "Int assignment failed.\n";
-    expect(that % 2 == *int_ptr2) << "Int assignment failed.\n";
-
-    expect(throws<std::bad_alloc>([&] {
-      [[maybe_unused]] auto ptr3 =
-        allocator->allocate(sizeof(std::uint32_t), alignof(std::uint32_t));
-    }))
-      << "Exception not thrown when bad alloc happens.\n";
-
-    allocator->deallocate(ptr1, sizeof(std::uint32_t));
-    allocator->deallocate(ptr2, sizeof(std::uint32_t));
-  };
+  // NOLINTEND(performance-unnecessary-copy-initialization)
+} catch (...) {
+  std::println("What even is this?");
+  return 0;
 }
-}  // namespace mem
-// NOLINTEND(performance-unnecessary-copy-initialization)

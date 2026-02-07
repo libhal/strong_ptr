@@ -12,19 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <memory_resource>
-
 #include <boost/ut.hpp>
 
+import test_util;
 import strong_ptr;
-import strong_ptr_unit_test;
 
-// NOLINTBEGIN(performance-unnecessary-copy-initialization)
-namespace mem {
-void combined_mixins_test()
+using namespace boost::ut;
+using namespace mem;
+
+int main()
 {
-  using namespace boost::ut;
-
+  // NOLINTBEGIN(performance-unnecessary-copy-initialization)
   "both_mixins_work_together"_test = [&] {
     auto obj = fully_managed_class::create(test_allocator, 42);
 
@@ -63,6 +61,5 @@ void combined_mixins_test()
     expect(that % 100 == self1->value());
     expect(that % 100 == self3->value());
   };
-};
-}  // namespace mem
-// NOLINTEND(performance-unnecessary-copy-initialization)
+  // NOLINTEND(performance-unnecessary-copy-initialization)
+}
