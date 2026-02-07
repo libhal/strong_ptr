@@ -110,7 +110,7 @@ install(
 install(
     EXPORT strong_ptr_targets
     FILE "strong_ptr-config.cmake"
-    NAMESPACE strong_ptr::
+    NAMESPACE libhal::
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/strong_ptr"
     CXX_MODULES_DIRECTORY "cxx-modules"
 )
