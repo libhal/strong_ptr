@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        ".clangd": "text",
+        ".clang-tidy": "yaml",
+        ".clang-format": "yaml"
+    },
+    "clangd.path": "${workspaceFolder}/clangd_wrapper.py",
+}

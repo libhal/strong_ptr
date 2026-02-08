@@ -34,9 +34,11 @@ target_sources(${PROJECT_NAME} PUBLIC
     TYPE CXX_MODULES
     PRIVATE main.cpp
 )
-target_include_directories(${PROJECT_NAME} PUBLIC .)
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
-target_compile_options(${PROJECT_NAME} PRIVATE -fexceptions -fno-rtti)
+target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fexceptions -fno-rtti>
+    $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR->
+)
 target_link_libraries(${PROJECT_NAME} PRIVATE libhal::strong_ptr)
 
 # Always run this custom target by making it depend on ALL

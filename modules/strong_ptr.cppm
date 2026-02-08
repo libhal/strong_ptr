@@ -1019,21 +1019,13 @@ public:
     return strong_from_this();
   }
 
-protected:
+private:
+  friend T;
+
   /**
    * @brief Protected constructor to prevent direct instantiation
    */
   enable_strong_from_this() = default;
-
-  /**
-   * @brief Protected copy constructor
-   *
-   * Note: The weak_ptr is not copied - each object gets its own weak reference
-   */
-  enable_strong_from_this(enable_strong_from_this const&) noexcept
-  {
-    // Intentionally don't copy m_weak_this
-  }
 
   // NOLINTBEGIN(bugprone-unhandled-self-assignment)
   /**
@@ -1055,7 +1047,16 @@ protected:
    */
   ~enable_strong_from_this() = default;
 
-private:
+  /**
+   * @brief Protected copy constructor
+   *
+   * Note: The weak_ptr is not copied - each object gets its own weak reference
+   */
+  enable_strong_from_this(enable_strong_from_this const&) noexcept
+  {
+    // Intentionally don't copy m_weak_this
+  }
+
   template<class U, typename... Args>
   friend constexpr strong_ptr<U> make_strong_ptr(std::pmr::memory_resource*,
                                                  Args&&...);
