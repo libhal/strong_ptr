@@ -4,5 +4,5 @@
         ".clang-tidy": "yaml",
         ".clang-format": "yaml"
     },
-    "clangd.path": "${workspaceFolder}/clangd-wrapper.py",
+    "clangd.path": "${workspaceFolder}/clangd_wrapper.py",
 }
