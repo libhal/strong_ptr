@@ -105,7 +105,7 @@ class strong_ptr_conan(ConanFile):
         self.tool_requires("ninja/[^1.3.0]")
         self.test_requires("boost-ext-ut/2.3.1",
                            options={'disable_module': False})
-        self.requires("libhal-cmake-util/[^5.0.0]")
+        self.requires("libhal-cmake-util/[^5.0.2]")
 
     def requirements(self):
         pass

@@ -20,7 +20,7 @@ project(strong_ptr LANGUAGES CXX)
 # Source: https://github.com/libhal/libhal-cmake-util
 find_package(LibhalCMakeUtil REQUIRED)
 
-libhal_project_init(strong_ptr)
+libhal_project_init()
 libhal_add_library(strong_ptr MODULES modules/strong_ptr.cppm)
 libhal_apply_compile_options(strong_ptr)
 libhal_install_library(strong_ptr NAMESPACE libhal)
