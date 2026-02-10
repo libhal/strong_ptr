@@ -39,6 +39,10 @@
     "NOLINTNEXTLINE",
     "bugprone",
     "ASAN",
+    "doxygenclass",
+    "doxygenstruct",
+    "alignof",
+    "doxygenfunction"
   ],
   "ignorePaths": [
     "build/",

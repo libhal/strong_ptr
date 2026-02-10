@@ -40,8 +40,21 @@ class weak_ptr;
 export template<typename T>
 class optional_ptr;
 
+/**
+ * @brief Base class for monotonic allocators providing the pmr memory resource
+ * interface
+ *
+ * Implements std::pmr::memory_resource with monotonic (bump) allocation.
+ * Allocations advance a pointer forward through a buffer. Deallocations only
+ * decrement an allocation counter; memory is not reused. If the allocator is
+ * destroyed while memory is still allocated, std::terminate is called to
+ * prevent dangling references.
+ *
+ * @throws std::bad_alloc when insufficient space remains for an allocation
+ */
 struct monotonic_allocator_base : public std::pmr::memory_resource
 {
+  /// @brief Destructor that calls std::terminate if allocated bytes is not zero
   ~monotonic_allocator_base() override
   {
     if (m_allocated_bytes != 0) {
@@ -49,6 +62,11 @@ struct monotonic_allocator_base : public std::pmr::memory_resource
     }
   }
 
+  /// @brief Allocates memory by advancing a pointer through the buffer
+  /// @param p_bytes number of bytes to allocate
+  /// @param p_alignment required alignment for the allocation
+  /// @return pointer to the allocated memory
+  /// @throws std::bad_alloc if insufficient space remains
   void* do_allocate(std::size_t p_bytes, std::size_t p_alignment) override
   {
     void* result = std::align(p_alignment, p_bytes, m_ptr, m_space);
@@ -62,58 +80,87 @@ struct monotonic_allocator_base : public std::pmr::memory_resource
     return result;
   };
 
+  /// @brief Records a deallocation by decrementing the allocation counter
+  /// @param p_bytes number of bytes being deallocated
   void do_deallocate(void*, std::size_t p_bytes, std::size_t) override
   {
     m_allocated_bytes -= static_cast<decltype(m_allocated_bytes)>(p_bytes);
   }
 
+  /// @brief Checks if two memory resources are the same object
   [[nodiscard]] bool do_is_equal(
     std::pmr::memory_resource const& p_other) const noexcept override
   {
     return *this == p_other;
   }
 
+  /// @brief Remaining space in the buffer
   size_t m_space = 0;
+  /// @brief Current position in the buffer
   void* m_ptr = nullptr;
+  /// @brief Tracks total allocated bytes for leak detection
   std::int32_t m_allocated_bytes = 0;
 };
 
+/**
+ * @brief A stack-allocated monotonic memory arena for use with pmr allocators
+ *
+ * Provides a fixed-size, stack-allocated buffer that serves as a
+ * std::pmr::memory_resource. Allocations advance sequentially through the
+ * buffer. Deallocations only track the byte count — memory is never reused.
+ * If the allocator is destroyed while allocations are still outstanding,
+ * std::terminate is called.
+ *
+ * Supports implicit conversion to std::pmr::memory_resource* and
+ * std::pmr::polymorphic_allocator<T>, and provides operator-> for direct
+ * allocate/deallocate calls.
+ *
+ * @tparam MemorySize number of bytes in the internal storage buffer
+ */
 template<size_t MemorySize>
 struct monotonic_allocator
 {
+  /// @brief Initializes the internal buffer and sets up the base allocator
   monotonic_allocator()
   {
     m_base.m_ptr = m_storage.data();
     m_base.m_space = MemorySize;
   }
 
+  /// @brief Returns a pointer to the underlying memory resource
   std::pmr::memory_resource* resource()
   {
     return &m_base;
   }
 
+  /// @brief Implicit conversion to std::pmr::memory_resource*
   operator std::pmr::memory_resource*()
   {
     return &m_base;
   }
 
+  /// @brief Arrow operator for direct access to memory resource methods
   std::pmr::memory_resource* operator->()
   {
     return &m_base;
   }
 
+  /// @brief Dereference operator returning the memory resource
   std::pmr::memory_resource& operator*()
   {
     return m_base;
   }
 
+  /// @brief Implicit conversion to std::pmr::polymorphic_allocator<T>
   template<typename T>
   operator std::pmr::polymorphic_allocator<T>()
   {
     return &m_base;
   }
 
+  /// @brief The base allocator implementing the pmr interface
   monotonic_allocator_base m_base{};
+  /// @brief Fixed-size storage buffer for allocations
   std::array<std::byte, MemorySize> m_storage = {};
 };
 
