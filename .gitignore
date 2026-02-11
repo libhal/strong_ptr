@@ -56,3 +56,6 @@ conanbuildinfo.txt
 
 # CMake
 CMakeUserPresets.json
+
+# Python
+.venv

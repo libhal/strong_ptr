@@ -1,4 +1,4 @@
-sphinx
-pydata-sphinx-theme
-myst_parser
-breathe
+sphinx>=8.1.3
+pydata-sphinx-theme>=0.16.1
+myst_parser>=4.0.1
+breathe>=4.36.0
