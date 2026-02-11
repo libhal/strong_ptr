@@ -1,9 +1,31 @@
 from sphinx.application import Sphinx
+from pathlib import Path
+import json
 import os
+import re
 
 if not os.environ.get('LIBHAL_API_VERSION'):
     print("\nEnvironment variable 'LIBHAL_API_VERSION' must be set!")
     exit(1)
+
+API_VERSION = os.environ.get('LIBHAL_API_VERSION')
+
+doxygen_conf = Path('doxygen.conf').read_text()
+match = re.search(r'PROJECT_NAME\s*=\s*"([^"]+)"', doxygen_conf)
+if not match:
+    print("\nCould not find PROJECT_NAME in doxygen.conf!")
+    exit(1)
+LIBRARY_NAME = match.group(1)
+
+DEFAULT_SWITCHER_URL = f"https://libhal.github.io/api/{LIBRARY_NAME}/switcher.json"
+
+if os.environ.get('LIBHAL_LOCAL_BUILD'):
+    switcher_path = Path('_static') / 'switcher.json'
+    switcher_path.write_text(
+        json.dumps([{"version": API_VERSION, "url": "."}]))
+    switcher_url = "_static/switcher.json"
+else:
+    switcher_url = DEFAULT_SWITCHER_URL
 
 html_theme = 'pydata_sphinx_theme'
 html_theme_options = {
@@ -13,8 +35,8 @@ html_theme_options = {
     "navbar_persistent": ["search-button-field", "theme-switcher"],
     "header_links_before_dropdown": 3,
     "switcher": {
-        "json_url": "https://libhal.github.io/api/strong_ptr/switcher.json",
-        "version_match": os.environ.get('LIBHAL_API_VERSION'),
+        "json_url": switcher_url,
+        "version_match": API_VERSION,
     },
     "check_switcher": False,
 }
@@ -29,10 +51,10 @@ def setup(app: Sphinx):
 html_css_files = [
     'extra.css',
 ]
-breathe_projects = {"strong_ptr": "build/xml"}
-breathe_default_project = "strong_ptr"
+breathe_projects = {LIBRARY_NAME: "build/xml"}
+breathe_default_project = LIBRARY_NAME
 breathe_default_members = ('members',)
-project = "strong_ptr"
+project = LIBRARY_NAME
 source_suffix = {
     '.rst': 'restructuredtext',
     '.md': 'markdown'
