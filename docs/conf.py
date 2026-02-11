@@ -19,11 +19,10 @@ LIBRARY_NAME = match.group(1)
 
 DEFAULT_SWITCHER_URL = f"https://libhal.github.io/api/{LIBRARY_NAME}/switcher.json"
 
-if os.environ.get('LIBHAL_LOCAL_BUILD'):
-    switcher_path = Path('_static') / 'switcher.json'
-    switcher_path.write_text(
-        json.dumps([{"version": API_VERSION, "url": "."}]))
-    switcher_url = "_static/switcher.json"
+LOCAL_BUILD = os.environ.get('LIBHAL_LOCAL_BUILD')
+
+if LOCAL_BUILD:
+    switcher_url = "switcher.json"
 else:
     switcher_url = DEFAULT_SWITCHER_URL
 
@@ -44,8 +43,16 @@ html_theme_options = {
 extensions = ["breathe", "myst_parser"]
 
 
+def write_local_switcher(app, exception):
+    if LOCAL_BUILD and exception is None:
+        outdir = Path(app.outdir)
+        (outdir / 'switcher.json').write_text(
+            json.dumps([{"version": API_VERSION, "url": "."}]))
+
+
 def setup(app: Sphinx):
     app.add_css_file("extra.css")
+    app.connect("build-finished", write_local_switcher)
 
 
 html_css_files = [
