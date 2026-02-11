@@ -42,7 +42,10 @@
     "doxygenclass",
     "doxygenstruct",
     "alignof",
-    "doxygenfunction"
+    "doxygenfunction",
+    "cassert",
+    "CRTP",
+    "MSVC"
   ],
   "ignorePaths": [
     "build/",
