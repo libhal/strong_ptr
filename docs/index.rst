@@ -15,4 +15,4 @@ counted smart pointers with polymorphic allocator support.
   :caption: strong_ptr Docs
   :maxdepth: 5
 
-  strong_ptr API <strong_ptr/index>
+  api/index

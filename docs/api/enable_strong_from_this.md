@@ -1,6 +1,4 @@
-# enable_strong_from_this
-
-## enable_strong_from_this\<T\>
+# enable_strong_from_this\<T\>
 
 Defined in namespace `mem`
 

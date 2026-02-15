@@ -1,6 +1,4 @@
-# monotonic_allocator
-
-## monotonic_allocator\<MemorySize\>
+# monotonic_allocator\<MemorySize\>
 
 Defined in namespace `mem`
 
@@ -12,14 +10,6 @@ is destroyed while allocations are still outstanding, `std::terminate` is
 called.
 
 Use `make_monotonic_allocator<N>()` to create instances.
-
-```{doxygenstruct} v1::monotonic_allocator
-```
-
-## make_monotonic_allocator
-
-```{doxygenfunction} v1::make_monotonic_allocator
-```
 
 ## Usage Examples
 
@@ -94,7 +84,11 @@ import strong_ptr;
 }
 ```
 
-## monotonic_allocator_base
+```{doxygenfunction} v1::make_monotonic_allocator
+```
+
+```{doxygenstruct} v1::monotonic_allocator
+```
 
 ```{doxygenstruct} v1::monotonic_allocator_base
 ```
