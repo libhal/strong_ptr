@@ -21,7 +21,6 @@ module;
 #include <exception>
 #include <memory>
 #include <memory_resource>
-#include <span>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -545,9 +544,6 @@ public:
    * @brief Create a strong_ptr that points to points to an object with static
    * storage duration.
    *
-   * This API MUST only be used with objects with static storage duration.
-   * Without that precondition met, it is UB to create such a strong_ptr.
-   *
    * There is no way in C++23 and below to determine if an lvalue passed has
    * static storage duration. With C++26 and `std::has_static_storage_duration`
    * we can determine this at compile time and provide a compile time error if
@@ -557,6 +553,10 @@ public:
    * Since the original object was statically allocated, there is no need for a
    * ref counted control block and thus no allocation occurs. `use_count()` will
    * return 0 meaning that the object is statically allocated.
+   *
+   * @warning If the reference to `p_object` does not have static storage
+   * duration, the resulting strong_ptr is invalid and accessing it is UB. Only
+   * use this API with an object known to have a static storage duration.
    *
    * @param p_object - a statically allocated object to
    * @return strong_ptr<T> - A strong_ptr pointing to lvalue which should have

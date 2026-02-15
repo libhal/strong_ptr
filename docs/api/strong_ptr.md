@@ -45,10 +45,14 @@ int main()
 }
 ```
 
-## APIs
+## make_strong_ptr\<T\>
+
+Factory function for creating a `strong_ptr`.
 
 ```{doxygenfunction} v1::make_strong_ptr
 ```
+
+## Class API
 
 ```{doxygenclass} v1::strong_ptr
 ```
