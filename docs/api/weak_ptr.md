@@ -1,6 +1,4 @@
-# weak_ptr
-
-## weak_ptr\<T\>
+# weak_ptr\<T\>
 
 Defined in namespace `mem`
 

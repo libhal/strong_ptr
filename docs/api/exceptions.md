@@ -1,7 +1,5 @@
 # Exceptions
 
-## exception
-
 Defined in namespace `mem`
 
 *import strong_ptr;*

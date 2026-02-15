@@ -1,6 +1,4 @@
-# optional_ptr
-
-## optional_ptr\<T\>
+# optional_ptr\<T\>
 
 Defined in namespace `mem`
 

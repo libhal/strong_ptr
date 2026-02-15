@@ -1,5 +1,5 @@
-strong_ptr API
-==============
+API
+====
 
 Defined in namespace ``mem``
 
@@ -10,8 +10,8 @@ Defined in namespace ``mem``
     :maxdepth: 2
 
     strong_ptr
-    weak_ptr
-    optional_ptr
-    enable_strong_from_this
     monotonic_allocator
     exceptions
+    optional_ptr
+    enable_strong_from_this
+    weak_ptr

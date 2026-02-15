@@ -15,11 +15,18 @@ allocator control via `std::pmr::memory_resource`, and C++23 module support.
 > The APIs of this library are not stable and may change at any time before
 > 1.0.0 release.
 
-```C++
-import strong_ptr;
+---
 
+> [!TIP]
+> **[View the full API documentation](https://libhal.github.io/api/strong_ptr/main/)**
+>
+> Use the version dropdown in the top-left corner of the docs page to switch between versions.
+
+```C++
 #include <cassert>
 #include <memory_resource>
+
+import strong_ptr;
 
 struct sensor {
   int id;
@@ -66,57 +73,49 @@ int main()
 
 ## Key Types
 
-### `mem::strong_ptr<T>`
+> **`mem::strong_ptr<T>`** — Non-null, reference-counted shared pointer
+>
+> Must be created via `make_strong_ptr` or from a static object using `unsafe_assume_static_tag`. Cannot be default-constructed or assigned `nullptr`.
 
-A non-null, reference-counted shared pointer. Must be created via
-`make_strong_ptr` or from a static object using `unsafe_assume_static_tag`.
+> **`mem::weak_ptr<T>`** — Non-owning reference that doesn't prevent destruction
+>
+> Use `.lock()` to obtain an `optional_ptr` if the object is still alive.
 
-### `mem::weak_ptr<T>`
+> **`mem::optional_ptr<T>`** — Nullable smart pointer
+>
+> The only way to represent "no value" in this library. Implicitly converts to `strong_ptr<T>` (throws `mem::nullptr_access` if empty).
 
-A non-owning reference that doesn't prevent destruction. Use `.lock()` to
-obtain an `optional_ptr` if the object is still alive.
+> **`mem::monotonic_allocator<N>`** — Stack-allocated bump allocator
+>
+> Implements `std::pmr::memory_resource`. Calls `std::terminate` on destruction if any allocations are still outstanding, preventing dangling references.
 
-### `mem::optional_ptr<T>`
+> **`mem::enable_strong_from_this<T>`** — CRTP mixin for self-referencing
+>
+> Allows an object managed by `strong_ptr` to obtain a `strong_ptr` or `weak_ptr` to itself:
+>
+> ```C++
+> class my_driver : public mem::enable_strong_from_this<my_driver> {
+> public:
+>   void register_callback() {
+>     auto self = strong_from_this();
+>     event_system.on_event([self]() { self->handle(); });
+>   }
+> };
+> ```
 
-A nullable smart pointer — the only way to represent "no value" in this
-library. Implicitly converts to `strong_ptr<T>` (throws `mem::nullptr_access`
-if empty).
-
-### `mem::monotonic_allocator<N>`
-
-A stack-allocated bump allocator implementing `std::pmr::memory_resource`.
-Calls `std::terminate` on destruction if any allocations are still outstanding,
-preventing dangling references.
-
-### `mem::enable_strong_from_this<T>`
-
-A CRTP mixin that allows an object managed by `strong_ptr` to obtain a
-`strong_ptr` or `weak_ptr` to itself:
-
-```C++
-class my_driver : public mem::enable_strong_from_this<my_driver> {
-public:
-  void register_callback() {
-    auto self = strong_from_this();
-    event_system.on_event([self]() { self->handle(); });
-  }
-};
-```
-
-### `mem::strong_ptr_only_token`
-
-A construction token that restricts a class to only be constructible via
-`make_strong_ptr`:
-
-```C++
-class restricted {
-public:
-  restricted(mem::strong_ptr_only_token, int value);
-};
-
-// Only way to create it:
-auto r = mem::make_strong_ptr<restricted>(allocator, 42);
-```
+> **`mem::strong_ptr_only_token`** — Construction restriction token
+>
+> Restricts a class to only be constructible via `make_strong_ptr`:
+>
+> ```C++
+> class restricted {
+> public:
+>   restricted(mem::strong_ptr_only_token, int value);
+> };
+>
+> // Only way to create it:
+> auto r = mem::make_strong_ptr<restricted>(allocator, 42);
+> ```
 
 ## Requirements
 
