@@ -84,11 +84,19 @@ import strong_ptr;
 }
 ```
 
+## APIs
+
+### Factory Function
+
 ```{doxygenfunction} v1::make_monotonic_allocator
 ```
 
+### Memory Resource + Storage Hybrid Object
+
 ```{doxygenstruct} v1::monotonic_allocator
 ```
+
+### Memory Resource Implementation
 
 ```{doxygenstruct} v1::monotonic_allocator_base
 ```
