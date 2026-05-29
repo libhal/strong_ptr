@@ -144,6 +144,11 @@ export {
       return weak_from_this();
     }
 
+    std::pmr::memory_resource* get_memory_resource()
+    {
+      return memory_resource();
+    }
+
   private:
     int m_value;
   };

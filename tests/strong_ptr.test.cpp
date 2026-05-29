@@ -417,6 +417,37 @@ void run_test() noexcept
     expect(derived.get_allocator() == base.get_allocator())
       << "Derived and base pointers should share the same allocator";
   };
+
+  "make_strong_ptr_with_polymorphic_allocator"_test = [&] {
+    // Create a polymorphic allocator from the test allocator
+    std::pmr::polymorphic_allocator<> pmr_alloc(test_allocator);
+
+    // Create a strong_ptr using the polymorphic allocator overload
+    auto ptr = make_strong_ptr<test_class>(pmr_alloc, 42);
+
+    // Verify the object was created correctly
+    expect(that % 42 == ptr->value())
+      << "Object should be created with correct value";
+
+    expect(that % 1 == test_class::instance_count)
+      << "Should have created one instance";
+
+    expect(that % 1 == ptr.use_count()) << "Should have exactly one reference";
+
+    // Verify the allocator is stored correctly
+    expect(that % test_allocator == ptr.get_allocator())
+      << "Allocator should match the original allocator";
+
+    // Test copy behavior with polymorphic allocator
+    auto ptr2 = ptr;
+    expect(that % 2 == ptr.use_count())
+      << "Should have two references after copy";
+
+    // Modify through the copy
+    ptr2->set_value(100);
+    expect(that % 100 == ptr->value())
+      << "Modification through copy should affect original";
+  };
   // NOLINTEND(performance-unnecessary-copy-initialization)
 }
 

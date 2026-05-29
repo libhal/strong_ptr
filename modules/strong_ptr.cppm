@@ -116,7 +116,7 @@ struct monotonic_allocator_base : public std::pmr::memory_resource
  *
  * @tparam MemorySize number of bytes in the internal storage buffer
  */
-template<size_t MemorySize>
+export template<size_t MemorySize>
 struct monotonic_allocator
 {
   /// @brief Initializes the internal buffer and sets up the base allocator
@@ -336,6 +336,7 @@ struct rc
     return sizeof(rc<T>);
   }
 };
+
 // Check if a type is an array or std::array
 template<typename T>
 struct is_array_like : std::false_type
@@ -1024,6 +1025,25 @@ export template<class T>
 class enable_strong_from_this
 {
 public:
+  /**
+   * @brief Returns the address of the object's memory resource
+   *
+   * This allows objects using `enable_strong_from_this` access to the memory
+   * resource used to construct it. This can be useful for the PIMPL idiom of a
+   * private implementation. At construction the memory resource can be used to
+   * allocate the members of the object. When used with memory resources that
+   * allocate in a single direction (monotonic memory resources), then the
+   * memory for the objects will be located right next to the object itself,
+   * maximizing memory locality.
+   *
+   * @return std::pmr::memory_resource* - get the allocator used by this
+   * Returns `nullptr` if the the object is statically allocated.
+   */
+  [[nodiscard]] constexpr std::pmr::memory_resource* memory_resource()
+  {
+    return m_ref_counted_self->m_info.allocator;
+  }
+
   /**
    * @brief Get a strong_ptr to this object
    *
@@ -2116,5 +2136,13 @@ export template<class T, typename... Args>
   }
 
   return result;
+}
+
+export template<class T, typename... Args>
+[[nodiscard]] constexpr strong_ptr<T> make_strong_ptr(
+  std::pmr::polymorphic_allocator<> p_memory_resource,
+  Args&&... p_args)
+{
+  return make_strong_ptr<T>(p_memory_resource.resource(), p_args...);
 }
 }  // namespace mem::inline v1
