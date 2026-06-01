@@ -34,7 +34,6 @@ target_sources(${PROJECT_NAME} PUBLIC
     TYPE CXX_MODULES
     PRIVATE main.cpp
 )
-target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_options(${PROJECT_NAME} PRIVATE
     $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-fexceptions -fno-rtti>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc /GR->
