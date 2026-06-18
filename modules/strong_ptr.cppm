@@ -77,7 +77,7 @@ struct monotonic_allocator_base : public std::pmr::memory_resource
     m_ptr = static_cast<std::uint8_t*>(result) + p_bytes;
     m_space -= p_bytes;
     return result;
-  };
+  }
 
   /// @brief Records a deallocation by decrementing the allocation counter
   /// @param p_bytes number of bytes being deallocated
@@ -327,10 +327,12 @@ struct rc
   constexpr static std::size_t destruct_this_type_and_return_size(
     void const* p_object)
   {
-    if (p_object != nullptr) {
-      // Cast back into the original rc<T> type and ...
-      auto const* obj = static_cast<rc<T> const*>(p_object);
-      obj->~rc<T>();
+    if constexpr (not std::is_trivially_destructible_v<T>) {
+      if (p_object != nullptr) {
+        // Cast back into the original rc<T> type and ...
+        auto const* obj = static_cast<rc<T> const*>(p_object);
+        obj->~rc<T>();
+      }
     }
     // Return size for future deallocation
     return sizeof(rc<T>);
@@ -1092,7 +1094,11 @@ private:
   /**
    * @brief Protected constructor to prevent direct instantiation
    */
-  enable_strong_from_this() = default;
+  enable_strong_from_this()
+  {
+    // Initialize enable_strong_from_this if the type inherits from it
+    init_weak_this(this);
+  }
 
   // NOLINTBEGIN(bugprone-unhandled-self-assignment)
   /**
