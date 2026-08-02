@@ -110,33 +110,33 @@ void run_test() noexcept
   "optional_ptr::construction"_test = [&] {
     // Test default constructor
     optional_ptr<test_class> empty;
-    expect(that % false == bool(empty))
+    expect(that % false == static_cast<bool>(empty))
       << "Default constructed optional_ptr should be empty\n";
 
     // Test nullptr constructor
     optional_ptr<test_class> null_ptr = nullptr;
-    expect(that % false == bool(null_ptr))
+    expect(that % false == static_cast<bool>(null_ptr))
       << "Nullptr constructed optional_ptr should be empty\n";
 
     // Test from strong_ptr
     auto strong = make_strong_ptr<test_class>(test_allocator, 42);
     optional_ptr<test_class> opt = strong;
 
-    expect(that % true == bool(opt))
+    expect(that % true == static_cast<bool>(opt))
       << "Optional from strong_ptr should be valid\n";
     expect(that % 2 == strong.use_count()) << "Should share ownership\n";
 
     // Test make_optional_ptr factory function
     optional_ptr<test_class> direct_opt =
       make_strong_ptr<test_class>(test_allocator, 100);
-    expect(that % true == bool(direct_opt))
+    expect(that % true == static_cast<bool>(direct_opt))
       << "Factory-created optional should be valid\n";
     expect(that % 100 == direct_opt->value())
       << "Value should match construction parameter\n";
 
     // Test copy constructor
     optional_ptr<test_class> opt2 = opt;
-    expect(that % true == bool(opt2)) << "Copy should be valid\n";
+    expect(that % true == static_cast<bool>(opt2)) << "Copy should be valid\n";
     expect(that % 3 == strong.use_count())
       << "Should now have three shared owners\n";
   };
@@ -176,18 +176,18 @@ void run_test() noexcept
     auto strong = make_strong_ptr<test_class>(test_allocator, 42);
     optional_ptr<test_class> opt = strong;
 
-    expect(that % true == bool(opt)) << "Optional should be valid\n";
+    expect(that % true == static_cast<bool>(opt)) << "Optional should be valid\n";
     expect(that % 2 == strong.use_count()) << "Should share ownership\n";
 
     // Reset to null
     opt = nullptr;
-    expect(that % false == bool(opt))
+    expect(that % false == static_cast<bool>(opt))
       << "Optional should be empty after reset\n";
     expect(that % 1 == strong.use_count()) << "Should release ownership\n";
 
     // Re-assign
     opt = strong;
-    expect(that % true == bool(opt)) << "Optional should be valid again\n";
+    expect(that % true == static_cast<bool>(opt)) << "Optional should be valid again\n";
     expect(that % 2 == strong.use_count()) << "Should share ownership again\n";
   };
 
@@ -195,7 +195,7 @@ void run_test() noexcept
     auto derived = make_strong_ptr<derived_class>(test_allocator, 42);
     optional_ptr<base_class> base_opt = derived;
 
-    expect(that % true == bool(base_opt))
+    expect(that % true == static_cast<bool>(base_opt))
       << "Polymorphic optional should be valid\n";
     expect(that % 42 == base_opt->value())
       << "Value should be accessible through base interface\n";

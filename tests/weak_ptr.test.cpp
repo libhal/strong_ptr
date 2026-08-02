@@ -84,12 +84,12 @@ void run_test() noexcept
       temp_weak = temp_strong;
 
       auto locked = temp_weak.lock();
-      expect(that % true == bool(locked))
+      expect(that % true == static_cast<bool>(locked))
         << "Lock should succeed on existing weak_ptr\n";
     }
 
     auto locked = temp_weak.lock();
-    expect(that % false == bool(locked))
+    expect(that % false == static_cast<bool>(locked))
       << "Lock should fail on expired weak_ptr\n";
   };
 
@@ -101,7 +101,7 @@ void run_test() noexcept
       << "Polymorphic weak_ptr should not be expired\n";
 
     auto locked = base_weak.lock();
-    expect(that % true == bool(locked))
+    expect(that % true == static_cast<bool>(locked))
       << "Should be able to lock polymorphic weak_ptr\n";
     expect(that % 42 == locked->value())
       << "Locked value should match original\n";
@@ -124,7 +124,7 @@ void run_test() noexcept
         << "Object should be destroyed\n";
 
       auto locked = weak.lock();
-      expect(that % false == bool(locked))
+      expect(that % false == static_cast<bool>(locked))
         << "Locking expired weak_ptr should return null optional\n";
     };
   // NOLINTEND(performance-unnecessary-copy-initialization)

@@ -40,7 +40,7 @@ void run_test() noexcept
     expect(not weak_self.expired()) << "Weak reference should be valid";
 
     auto locked = weak_self.lock();
-    expect(that % true == bool(locked))
+    expect(that % true == static_cast<bool>(locked))
       << "Should be able to lock weak reference";
     expect(that % 42 == locked->value());
   };
@@ -85,7 +85,7 @@ void run_test() noexcept
       << "Weak reference should be expired after object destruction";
 
     auto locked = weak_ref.lock();
-    expect(that % false == bool(locked))
+    expect(that % false == static_cast<bool>(locked))
       << "Should not be able to lock expired weak reference";
   };
 
