@@ -176,7 +176,8 @@ void run_test() noexcept
     auto strong = make_strong_ptr<test_class>(test_allocator, 42);
     optional_ptr<test_class> opt = strong;
 
-    expect(that % true == static_cast<bool>(opt)) << "Optional should be valid\n";
+    expect(that % true == static_cast<bool>(opt))
+      << "Optional should be valid\n";
     expect(that % 2 == strong.use_count()) << "Should share ownership\n";
 
     // Reset to null
@@ -187,7 +188,8 @@ void run_test() noexcept
 
     // Re-assign
     opt = strong;
-    expect(that % true == static_cast<bool>(opt)) << "Optional should be valid again\n";
+    expect(that % true == static_cast<bool>(opt))
+      << "Optional should be valid again\n";
     expect(that % 2 == strong.use_count()) << "Should share ownership again\n";
   };
 
