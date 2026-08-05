@@ -216,7 +216,10 @@ export {
   };
 
   std::array<std::byte, 4096Uz * 16Uz> buffer{};
+  // NOLINTBEGIN(bugprone-throwing-static-initialization): not static storage
+  // duration
   std::pmr::monotonic_buffer_resource test_resource{ buffer.data(),
                                                      buffer.size() };
+  // NOLINTEND(bugprone-throwing-static-initialization)
   std::pmr::memory_resource* test_allocator{ &test_resource };
 }

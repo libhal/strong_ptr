@@ -487,7 +487,8 @@ export struct nullptr_access : public exception
 };
 
 /**
- * @brief API tag used to create a strong_ptr which points to static memory
+ * @brief API tag used to create a strong_ptr which points to static memory.
+ * Recommended to not use this directly but use `unsafe_assume_static` instead.
  *
  * As the name implies this is unsafe and is up to the developer to ensure that
  * the object passed to strong_ptr actually has static storage duration.
@@ -495,6 +496,16 @@ export struct nullptr_access : public exception
  */
 export struct unsafe_assume_static_tag
 {};
+
+/**
+ * @brief API tag object that can be passed to strong_ptr for static memory
+ * objects. (Recommended)
+ *
+ *
+ * As the name implies this is unsafe and is up to the developer to ensure that
+ * the object passed to strong_ptr actually has static storage duration.
+ */
+export constexpr unsafe_assume_static_tag unsafe_assume_static{};
 
 /**
  * @brief A non-nullable strong reference counted pointer
